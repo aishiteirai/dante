@@ -15,6 +15,11 @@ const (
 	maxFileLines  = 1500
 	maxOutputSize = 60_000
 	maxBatchFiles = 20
+
+	// DiffContextLines é o contexto padrão dos diffs enviados ao modelo: o bastante para
+	// entender a mudança sem abrir o arquivo inteiro.
+	DiffContextLines = 10
+	maxDiffContext   = 40
 )
 
 // Tools devolve as ferramentas de leitura oferecidas ao modelo.
@@ -50,10 +55,12 @@ func Tools() []llm.Tool {
 					}, "path"),
 				},
 			}, "files")},
-		{Name: "git_diff", Description: "Diff do alvo em revisão (commit ou mudanças locais). Use `path` para um arquivo só.",
+		{Name: "git_diff", Description: "Diff do alvo em revisão (commit ou mudanças locais), com linhas de contexto " +
+			"ao redor de cada mudança. Use `path` para um arquivo só.",
 			Params: obj(map[string]any{
-				"ref":  str("Opcional: SHA do commit; vazio = alvo atual da conversa."),
-				"path": str("Opcional: arquivo."),
+				"ref":           str("Opcional: SHA do commit; vazio = alvo atual da conversa."),
+				"path":          str("Opcional: arquivo."),
+				"context_lines": integer(fmt.Sprintf("Opcional: linhas de contexto (padrão %d, máximo %d).", DiffContextLines, maxDiffContext)),
 			})},
 		{Name: "grep", Description: "Busca um padrão (regex estendida do git grep) nos arquivos versionados. Devolve arquivo:linha:texto.",
 			Params: obj(map[string]any{
@@ -91,6 +98,7 @@ type toolArgs struct {
 	StartLine int       `json:"start_line"`
 	EndLine   int       `json:"end_line"`
 	Limit     int       `json:"limit"`
+	Context   int       `json:"context_lines"`
 }
 
 // Executor devolve o executor das ferramentas; `target` é o SHA em revisão (WorkTree = mudanças locais).
@@ -125,7 +133,11 @@ func (r Repo) Executor(target func() string) llm.Executor {
 			if ref == "" {
 				ref = target()
 			}
-			out, err = r.Diff(ref, a.Path)
+			n := a.Context
+			if n <= 0 {
+				n = DiffContextLines
+			}
+			out, err = r.DiffContext(ref, a.Path, min(n, maxDiffContext))
 			out = r.filterDiff(out)
 			if err == nil && strings.TrimSpace(out) == "" {
 				out = "(sem diferenças)"

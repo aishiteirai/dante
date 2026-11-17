@@ -124,3 +124,19 @@ func TestReadFiles(t *testing.T) {
 		t.Error("lote vazio deveria ser erro")
 	}
 }
+
+func TestDiffComContexto(t *testing.T) {
+	r := setup(t)
+	log, _ := r.Log(10)
+	exec := r.Executor(func() string { return log[0].SHA })
+	curto, _ := exec(context.Background(), llm.ToolCall{Name: "git_diff", Args: `{"context_lines":1}`})
+	padrao, _ := exec(context.Background(), llm.ToolCall{Name: "git_diff", Args: `{}`})
+	// As mudanças são nas linhas 2 e 7: com 10 de contexto a linha 4 aparece; com 1, não.
+	if strings.Contains(curto, "\n b = 0") || !strings.Contains(padrao, "\n b = 0") {
+		t.Fatalf("contexto não aplicado:\ncurto=%s\npadrão=%s", curto, padrao)
+	}
+	d, _ := r.DiffForModel(log[0].SHA, "", 10)
+	if d != strings.TrimSuffix(padrao, "\n") && d != padrao {
+		t.Fatalf("DiffForModel difere do git_diff:\n%q\n%q", d, padrao)
+	}
+}

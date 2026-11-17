@@ -132,3 +132,14 @@ func (r Repo) filterGrep(out string) string {
 	}
 	return strings.Join(keep, "\n")
 }
+
+// DiffForModel é o diff como o modelo deve vê-lo: com contexto ao redor das mudanças, sem
+// os arquivos sensíveis e com os segredos mascarados.
+func (r Repo) DiffForModel(sha, path string, lines int) (string, error) {
+	d, err := r.DiffContext(sha, path, lines)
+	if err != nil {
+		return "", err
+	}
+	out, _ := Redact(r.filterDiff(d))
+	return out, nil
+}
