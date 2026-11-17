@@ -25,6 +25,7 @@ const (
 	eTool
 	eNotice
 	eError
+	eUsage // gasto de tokens de uma resposta
 )
 
 type entry struct {
@@ -121,6 +122,7 @@ func (m *model) ensureChat() error {
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
 		ContextTokens: m.prov.Contexto,
+		TurnBudget:    m.cfg.TurnBudget(),
 	})
 	if err != nil {
 		return err
@@ -384,6 +386,17 @@ func (m *model) selectFile(path string) {
 	}
 }
 
+// humanTokens: 950 → "950", 58200 → "58,2 mil", 1250000 → "1,25 mi".
+func humanTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return strings.Replace(fmt.Sprintf("%.2f mi", float64(n)/1e6), ".", ",", 1)
+	case n >= 1000:
+		return strings.Replace(fmt.Sprintf("%.1f mil", float64(n)/1e3), ".", ",", 1)
+	}
+	return fmt.Sprint(n)
+}
+
 func shortSHA(s string) string {
 	if len(s) > 7 {
 		return s[:7]
@@ -456,6 +469,10 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 		if m.entries[i].kind == eTool && !m.entries[i].done {
 			m.entries[i].done = true
 		}
+	}
+	if t := msg.usage.InputTokens + msg.usage.OutputTokens; t > 0 {
+		m.entries = append(m.entries, entry{kind: eUsage, text: fmt.Sprintf("%s tokens nesta resposta (entrada %s · saída %s)",
+			humanTokens(t), humanTokens(msg.usage.InputTokens), humanTokens(msg.usage.OutputTokens))})
 	}
 	switch {
 	case msg.err == nil:
@@ -572,6 +589,8 @@ func (m *model) refreshChat() {
 			parts = append(parts, "  "+warnStyle.Render("• "+e.text))
 		case eError:
 			parts = append(parts, "  "+errStyle.Render(lipgloss.NewStyle().Width(w-2).Render("⚠ "+e.text)))
+		case eUsage:
+			parts = append(parts, "  "+subtleStyle.Render(truncateW("↳ "+e.text, w-2)))
 		}
 	}
 	if m.streaming && (last < 0 || m.entries[last].kind != eAssistant || m.thinking) {

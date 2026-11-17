@@ -150,3 +150,49 @@ func TestCorteDeResultadoGrande(t *testing.T) {
 		t.Fatalf("resultado não foi cortado: %d caracteres", len(got))
 	}
 }
+
+func TestOrcamentoPorPergunta(t *testing.T) {
+	// Modelo teimoso: sempre pede outra ferramenta, e cada rodada "custa" 1000 tokens.
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(b, &body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}]},"finish_reason":"tool_calls"}]}`)
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[],"usage":{"prompt_tokens":900,"completion_tokens":100}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	executadas := 0
+	exec := func(context.Context, ToolCall) (string, bool) { executadas++; return "conteúdo", false }
+	chat, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m", Tools: []Tool{readTool}, Exec: exec, TurnBudget: 2500})
+	var evs []Event
+	u, err := chat.Send(context.Background(), "revise", collect(&evs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rodadas 1 e 2 executam (gasto 1000, 2000); na 3ª (3000) o modelo recebe o aviso;
+	// na 4ª ele insiste e o laço para.
+	if executadas != 2 || len(bodies) != 4 || u.InputTokens+u.OutputTokens != 4000 {
+		t.Fatalf("executadas=%d requisições=%d gasto=%d", executadas, len(bodies), u.InputTokens+u.OutputTokens)
+	}
+	msgs := bodies[3]["messages"].([]any)
+	if last := msgs[len(msgs)-1].(map[string]any); !strings.Contains(last["content"].(string), "Orçamento de tokens desta pergunta esgotado") {
+		t.Fatalf("o modelo deveria receber o aviso: %v", last)
+	}
+	var avisos []string
+	for _, e := range evs {
+		if e.Kind == EvNotice {
+			avisos = append(avisos, e.Text)
+		}
+	}
+	if len(avisos) != 2 || !strings.Contains(avisos[0], "pedi ao modelo para concluir") || !strings.Contains(avisos[1], "parei a resposta") {
+		t.Fatalf("avisos = %v", avisos)
+	}
+	// O histórico continua válido: a próxima pergunta funciona.
+	if _, err := chat.Send(context.Background(), "e agora?", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+}

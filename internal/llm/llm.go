@@ -91,6 +91,9 @@ type Options struct {
 	// Ollama, guia a poda de resultados antigos; no Ollama também vira options.num_ctx.
 	// No Claude, a limpeza é feita pelo servidor (context editing).
 	ContextTokens int
+	// Orçamento de tokens (entrada + saída, somando todas as rodadas) de uma pergunta.
+	// 0 = sem limite.
+	TurnBudget int
 }
 
 func New(p Provider, o Options) (Chat, error) {

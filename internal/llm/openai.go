@@ -102,9 +102,11 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		return usage, err
 	}
 
+	guard := newGuard(c.opts.TurnBudget)
 	for step := 0; step < c.opts.MaxSteps; step++ {
 		bytesSent := c.fit(start, emit)
 		msg, finish, u, err := c.complete(ctx, emit)
+		guard.add(u)
 		usage.InputTokens += u.InputTokens
 		usage.OutputTokens += u.OutputTokens
 		if err != nil {
@@ -118,8 +120,13 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 			}
 			return usage, nil
 		}
+		run, stop := guard.check(emit)
 		for _, tc := range msg.ToolCalls {
 			call := ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: tc.Function.Arguments}
+			if !run {
+				c.messages = append(c.messages, oaMessage{Role: "tool", ToolCallID: tc.ID, Content: ptr("ERRO: " + budgetResult)})
+				continue
+			}
 			emit(Event{Kind: EvToolCall, Call: call})
 			out, isErr := c.opts.Exec(ctx, call)
 			emit(Event{Kind: EvToolResult, Call: call, Text: out, IsError: isErr})
@@ -130,6 +137,9 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		}
 		if ctx.Err() != nil {
 			return fail(ctx.Err())
+		}
+		if stop {
+			return usage, nil
 		}
 	}
 	emit(Event{Kind: EvNotice, Text: fmt.Sprintf("parei após %d rodadas de ferramentas", c.opts.MaxSteps), IsError: true})

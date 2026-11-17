@@ -285,3 +285,17 @@ func TestDiffNaMensagem(t *testing.T) {
 		t.Fatalf("diff do arquivo:\n%s", one)
 	}
 }
+
+func TestGastoDaResposta(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.chatView.Width = 80
+	nm, _ := m.onChatDone(chatDoneMsg{usage: llm.Usage{InputTokens: 55000, OutputTokens: 3200}})
+	m = nm.(model)
+	if got := m.entries[len(m.entries)-1]; got.kind != eUsage || got.text != "58,2 mil tokens nesta resposta (entrada 55,0 mil · saída 3,2 mil)" {
+		t.Fatalf("entrada = %+v", got)
+	}
+	if humanTokens(950) != "950" || humanTokens(1_250_000) != "1,25 mi" {
+		t.Fatal("humanTokens")
+	}
+}
