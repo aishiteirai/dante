@@ -42,12 +42,15 @@ var guidelineFiles = []string{".dante/diretrizes.md", ".revisor/diretrizes.md", 
 const systemPrompt = `Você é o dante, um revisor de código sênior que trabalha no terminal do desenvolvedor, no repositório %q.
 O desenvolvedor navega pelos commits e pelos arquivos alterados e conversa com você sobre as mudanças. Cada mensagem dele
 começa com um bloco <contexto> que diz o alvo em revisão (um commit ou as mudanças locais ainda não commitadas) e o
-arquivo em foco.
+arquivo em foco. Quando cabe, vem também um bloco <diff> com as mudanças e 10 linhas de contexto ao redor de cada uma.
 
-Como trabalhar:
-- Antes de opinar sobre um arquivo, abra-o com read_file e veja o que mudou com git_diff. Não opine sobre código que não leu.
-- Siga as pistas: leia quem chama o código alterado, os tipos e os testes relacionados (grep, read_file). Use git_log e
-  git_blame quando a intenção original ajudar a decidir.
+Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então leia com economia:
+- Comece pelo <diff>. Ele já mostra o que mudou; não peça git_diff de novo para o mesmo alvo. Sem <diff> na mensagem,
+  peça git_diff por arquivo, começando pelos que têm mais lógica.
+- Abra arquivos só para o que o diff não mostra: quem chama o código alterado, tipos, testes relacionados. Peça só os
+  trechos necessários (start_line/end_line) e junte tudo numa chamada de read_files, ou faça várias chamadas de
+  ferramenta na mesma resposta. Não abra de novo um arquivo que já leu nesta conversa.
+- Não opine sobre código que não viu, no diff ou num arquivo. Use git_log e git_blame quando a intenção original ajudar.
 - Num commit, read_file com ref=<sha> mostra o arquivo como estava naquele commit; sem ref, mostra o que está no disco hoje.
 - Ancore cada observação em arquivo:linha. Para bugs e falhas de segurança, descreva uma entrada ou situação concreta que
   leva ao erro; se não conseguir, diga que é uma suspeita.
@@ -91,6 +94,7 @@ func (m *model) resetChat() {
 	}
 	m.chat = nil
 	m.entries = nil
+	m.diffSent, m.diffPending = "", ""
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -168,16 +172,57 @@ func indent(s, pre string) string {
 
 // Atalho `r`: pede uma revisão do alvo inteiro ou de um arquivo.
 func (m model) quickReview(path string) (tea.Model, tea.Cmd) {
-	text := "Revise as mudanças deste alvo. Abra os arquivos alterados e diga o que está bom e o que precisa mudar."
+	text := "Revise as mudanças deste alvo: diga o que está bom e o que precisa mudar."
 	if path != "" {
-		text = fmt.Sprintf("Revise as mudanças em `%s`: abra o arquivo, veja o diff e opine.", path)
+		text = fmt.Sprintf("Revise as mudanças em `%s`.", path)
 	}
 	fm, cmd := m.focusPane(pChat)
-	nm, send := fm.(model).send(text)
+	nm, send := fm.(model).sendScoped(text, path)
 	return nm, tea.Batch(cmd, send)
 }
 
-func (m model) send(text string) (tea.Model, tea.Cmd) {
+// Diffs maiores que isto não vão na mensagem; o modelo pede por arquivo.
+const maxInlineDiff = 60_000
+
+// effectiveContext é o contexto do modelo em tokens (0 = grande o bastante para não limitar).
+func (m model) effectiveContext() int {
+	if m.prov.Contexto > 0 {
+		return m.prov.Contexto
+	}
+	return 0
+}
+
+// diffBlock devolve o diff do alvo (ou de um arquivo dele) para ir na mensagem, uma vez por
+// conversa para cada alvo/arquivo. Diffs grandes viram só um aviso.
+func (m *model) diffBlock(scope string) string {
+	key := m.target + "\x00" + scope
+	if key == m.diffSent || (scope != "" && m.diffSent == m.target+"\x00") {
+		return "" // já enviado nesta conversa (o do alvo inteiro cobre os arquivos)
+	}
+	limit := maxInlineDiff
+	if c := m.effectiveContext(); c > 0 {
+		limit = min(limit, c*3/4) // até ~1/4 do contexto (3 bytes por token)
+	}
+	d, err := m.repo.DiffForModel(m.target, scope, repo.DiffContextLines)
+	if err != nil || strings.TrimSpace(d) == "" {
+		return ""
+	}
+	what := "do alvo"
+	if scope != "" {
+		what = "de " + scope
+	}
+	if len(d) > limit {
+		return fmt.Sprintf("<diff>O diff %s tem %d KB, grande demais para vir aqui: peça git_diff por arquivo.</diff>\n\n",
+			what, len(d)/1024)
+	}
+	m.diffPending = key // vira diffSent quando a resposta terminar sem erro
+	return "<diff " + what + ">\n" + strings.TrimRight(d, "\n") + "\n</diff>\n\n"
+}
+
+func (m model) send(text string) (tea.Model, tea.Cmd) { return m.sendScoped(text, "") }
+
+// sendScoped envia a mensagem; scope é o arquivo cujo diff acompanha a mensagem ("" = alvo inteiro).
+func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return m, nil
@@ -191,7 +236,8 @@ func (m model) send(text string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	*m.sendTo = m.target
-	prompt := m.contextBlock() + text
+	m.diffPending = ""
+	prompt := m.contextBlock() + m.diffBlock(scope) + text
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""
@@ -414,6 +460,9 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case msg.err == nil:
 		m.status = ""
+		if m.diffPending != "" {
+			m.diffSent = m.diffPending
+		}
 	case msg.err == context.Canceled:
 		m.entries = append(m.entries, entry{kind: eNotice, text: "resposta cancelada"})
 		m.status = ""

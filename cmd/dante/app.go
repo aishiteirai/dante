@@ -104,19 +104,21 @@ type model struct {
 	previewKey   string
 
 	// chat
-	prov      config.Provider
-	modelName string
-	chat      llm.Chat
-	sendTo    *string // alvo usado pelas ferramentas durante a resposta
-	entries   []entry
-	input     textarea.Model
-	chatView  viewport.Model
-	streaming bool
-	cancel    context.CancelFunc
-	events    chan tea.Msg
-	usage     llm.Usage
-	convStart time.Time
-	thinking  bool
+	prov        config.Provider
+	modelName   string
+	chat        llm.Chat
+	sendTo      *string // alvo usado pelas ferramentas durante a resposta
+	diffSent    string  // alvo/arquivo cujo diff já foi enviado nesta conversa
+	diffPending string  // diff enviado na mensagem em andamento
+	entries     []entry
+	input       textarea.Model
+	chatView    viewport.Model
+	streaming   bool
+	cancel      context.CancelFunc
+	events      chan tea.Msg
+	usage       llm.Usage
+	convStart   time.Time
+	thinking    bool
 
 	// opções da linha de comando
 	flagModel string
