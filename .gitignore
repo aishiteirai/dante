@@ -4,3 +4,4 @@ __pycache__/
 /revisor-tui
 /dante
 .venv/
+/dist
