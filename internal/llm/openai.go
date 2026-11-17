@@ -74,10 +74,11 @@ type openAIChat struct {
 	http     *http.Client
 	tools    []oaTool
 	messages []oaMessage
+	budget   *budget
 }
 
 func newOpenAI(p Provider, o Options) *openAIChat {
-	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}}
+	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}, budget: newBudget(o.ContextTokens)}
 	if o.System != "" {
 		c.messages = append(c.messages, oaMessage{Role: "system", Content: ptr(o.System)})
 	}
@@ -102,12 +103,14 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 	}
 
 	for step := 0; step < c.opts.MaxSteps; step++ {
+		bytesSent := c.fit(start, emit)
 		msg, finish, u, err := c.complete(ctx, emit)
 		usage.InputTokens += u.InputTokens
 		usage.OutputTokens += u.OutputTokens
 		if err != nil {
 			return fail(err)
 		}
+		c.budget.calibrate(u.InputTokens, bytesSent)
 		c.messages = append(c.messages, msg)
 		if len(msg.ToolCalls) == 0 {
 			if finish == "length" {
@@ -123,7 +126,7 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 			if isErr {
 				out = "ERRO: " + out
 			}
-			c.messages = append(c.messages, oaMessage{Role: "tool", ToolCallID: tc.ID, Content: ptr(out)})
+			c.messages = append(c.messages, oaMessage{Role: "tool", ToolCallID: tc.ID, Content: ptr(c.budget.clip(out))})
 		}
 		if ctx.Err() != nil {
 			return fail(ctx.Err())
@@ -131,6 +134,31 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 	}
 	emit(Event{Kind: EvNotice, Text: fmt.Sprintf("parei após %d rodadas de ferramentas", c.opts.MaxSteps), IsError: true})
 	return usage, nil
+}
+
+// fit poda o histórico antes de cada requisição; devolve o tamanho enviado, em bytes.
+func (c *openAIChat) fit(current int, emit func(Event)) int {
+	// O raciocínio de rodadas anteriores não serve mais ao modelo (o DeepSeek o ignora).
+	for i := 0; i < current; i++ {
+		c.messages[i].ReasoningContent = ""
+	}
+	size := func(i int) int { b, _ := json.Marshal(c.messages[i]); return len(b) }
+	total := 0
+	for i := range c.messages {
+		total += size(i)
+	}
+	tb, _ := json.Marshal(c.tools)
+	total += len(tb)
+	removed, total := c.budget.prune(len(c.messages), current, total, size,
+		func(i int) bool {
+			m := c.messages[i]
+			return m.Role == "tool" && m.Content != nil && *m.Content != prunedResult
+		},
+		func(i int) { c.messages[i].Content = ptr(prunedResult) })
+	for _, ev := range c.budget.notices(removed, total) {
+		emit(ev)
+	}
+	return total
 }
 
 // complete faz uma requisição em streaming e devolve a mensagem do assistente montada.
@@ -287,6 +315,9 @@ func httpError(status int, body []byte, p Provider) error {
 // devolve só os modelos de preço zero que aceitam ferramentas (formato do OpenRouter),
 // com DeepSeek e Qwen primeiro.
 func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error) {
+	if p.Kind == KindOllama {
+		return listOllama(ctx, p)
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(p.BaseURL, "/")+"/models", nil)
 	if err != nil {
 		return nil, err

@@ -7,8 +7,8 @@ com ferramentas de leitura e opina sobre as mudanças.
 ## Convenções
 
 - Interface, mensagens, docs e commits em português.
-- Commits com o nome do dono do repositório (Ryan Alvarenga), sem linhas de co-autoria,
-  até ele pedir o contrário.
+- Commits como `Ryan Alvarenga <ryancorazzaalvarenga@gmail.com>` (a conta do GitHub dele,
+  não o e-mail profissional), sem linhas de co-autoria, até ele pedir o contrário.
 - Antes de commitar: `go vet ./... && go test ./...` precisam passar (`make test`).
 - O dante é um binário Go independente; a CLI Python `revisor/` é opcional (hooks/CI).
 

@@ -114,6 +114,14 @@ func TestAnthropicToolLoop(t *testing.T) {
 	if oc := bodies[0]["output_config"].(map[string]any); oc["effort"] != "high" {
 		t.Fatalf("effort = %v", oc)
 	}
+	cm, _ := bodies[0]["context_management"].(map[string]any)
+	if cm == nil || !strings.Contains(betas[0], "context-management-2025-06-27") {
+		t.Fatalf("limpeza de contexto ausente: %v / %s", bodies[0]["context_management"], betas[0])
+	}
+	edit := cm["edits"].([]any)[0].(map[string]any)
+	if edit["type"] != "clear_tool_uses_20250919" || edit["trigger"].(map[string]any)["value"] != float64(150000) {
+		t.Fatalf("edit = %v", edit)
+	}
 }
 
 // ---- Compatível com OpenAI ----

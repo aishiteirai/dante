@@ -65,6 +65,21 @@ func (c *anthropicChat) params() anthropic.BetaMessageNewParams {
 	if c.opts.Effort != "" {
 		p.OutputConfig = anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffort(c.opts.Effort)}
 	}
+	// Conversas longas: o servidor limpa resultados antigos de ferramentas. Não conta como
+	// edição do histórico (o pensamento preservado continua válido), e o histórico do lado
+	// do dante continua só crescendo.
+	p.ContextManagement = anthropic.BetaContextManagementConfigParam{
+		Edits: []anthropic.BetaContextManagementConfigEditUnionParam{{
+			OfClearToolUses20250919: &anthropic.BetaClearToolUses20250919EditParam{
+				Trigger: anthropic.BetaClearToolUses20250919EditTriggerUnionParam{
+					OfInputTokens: &anthropic.BetaInputTokensTriggerParam{Value: c.clearTrigger()},
+				},
+				Keep:         anthropic.BetaToolUsesKeepParam{Value: 6},
+				ClearAtLeast: anthropic.BetaInputTokensClearAtLeastParam{Value: 20000},
+			},
+		}},
+	}
+	p.Betas = append(p.Betas, anthropic.AnthropicBetaContextManagement2025_06_27)
 	if fallbackModels[c.opts.Model] {
 		p.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
 		p.Betas = append(p.Betas, anthropic.AnthropicBetaServerSideFallback2026_07_01)
@@ -134,6 +149,14 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 	}
 	emit(Event{Kind: EvNotice, Text: fmt.Sprintf("parei após %d rodadas de ferramentas", c.opts.MaxSteps), IsError: true})
 	return usage, nil
+}
+
+// Limpa os resultados antigos a partir de 150 mil tokens (ou 60% do contexto informado).
+func (c *anthropicChat) clearTrigger() int64 {
+	if c.opts.ContextTokens > 0 {
+		return int64(c.opts.ContextTokens) * 6 / 10
+	}
+	return 150000
 }
 
 func anthropicError(err error) error {

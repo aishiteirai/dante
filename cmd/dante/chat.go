@@ -115,6 +115,8 @@ func (m *model) ensureChat() error {
 		Tools:  repo.Tools(),
 		Exec:   m.repo.Executor(func() string { return *sendTo }),
 		Effort: effort,
+		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
+		ContextTokens: m.prov.Contexto,
 	})
 	if err != nil {
 		return err
@@ -152,7 +154,8 @@ func (m model) contextBlock() string {
 		fmt.Fprintf(&b, "Arquivo em foco: %s\n", m.files[m.fileIdx].Path)
 	}
 	b.WriteString("</contexto>\n\n")
-	return b.String()
+	out, _ := repo.Redact(b.String())
+	return out
 }
 
 func indent(s, pre string) string {

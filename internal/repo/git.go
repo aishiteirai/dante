@@ -16,7 +16,9 @@ const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 const WorkTree = ""
 
 type Repo struct {
-	Root string
+	Root     string
+	Bloquear []string // padrões extras de arquivos sensíveis
+	Liberar  []string // exceções aos padrões
 }
 
 func (r Repo) git(args ...string) (string, error) {

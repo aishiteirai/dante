@@ -86,6 +86,9 @@ func (r Repo) Executor(target func() string) llm.Executor {
 				return err.Error(), true
 			}
 			a.Path = clean
+			if r.Blocked(clean) && call.Name != "list_files" && call.Name != "git_log" {
+				return blockedErr(clean).Error(), true
+			}
 		}
 		var out string
 		var err error
@@ -98,6 +101,7 @@ func (r Repo) Executor(target func() string) llm.Executor {
 				ref = target()
 			}
 			out, err = r.Diff(ref, a.Path)
+			out = r.filterDiff(out)
 			if err == nil && strings.TrimSpace(out) == "" {
 				out = "(sem diferenças)"
 			}
@@ -113,12 +117,14 @@ func (r Repo) Executor(target func() string) llm.Executor {
 			if err != nil && out == "" && !strings.Contains(err.Error(), "fatal") {
 				out, err = "(nenhum resultado)", nil
 			}
+			out = r.filterGrep(out)
 		case "list_files":
 			args := []string{"ls-files"}
 			if a.Path != "" {
 				args = append(args, "--", a.Path)
 			}
 			out, err = r.git(args...)
+			out = r.markBlocked(out)
 		case "git_log":
 			n := a.Limit
 			if n <= 0 || n > 200 {
@@ -140,8 +146,22 @@ func (r Repo) Executor(target func() string) llm.Executor {
 		if err != nil {
 			return err.Error(), true
 		}
+		out, n := Redact(out)
+		if n > 0 {
+			out += fmt.Sprintf("\n(%d valor(es) com cara de segredo foram mascarados pelo dante)", n)
+		}
 		return truncate(out), false
 	}
+}
+
+func (r Repo) markBlocked(list string) string {
+	lines := strings.Split(list, "\n")
+	for i, l := range lines {
+		if l != "" && r.Blocked(l) {
+			lines[i] = l + "  (sensível: bloqueado para leitura)"
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func checkArg(s string) error {

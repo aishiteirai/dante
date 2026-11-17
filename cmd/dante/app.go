@@ -401,7 +401,7 @@ func (m model) onRepoOpened(msg repoOpenedMsg) (tea.Model, tea.Cmd) {
 	m.cfg.Trust(msg.root)
 	_ = m.cfg.Save()
 	m.recents = saveRecent(msg.root)
-	m.repo = repo.Repo{Root: msg.root}
+	m.repo = repo.Repo{Root: msg.root, Bloquear: m.cfg.ArquivosBloqueados, Liberar: m.cfg.ArquivosLiberados}
 	m.rows, m.files, m.filesFor = nil, nil, ""
 	m.logIdx, m.logOff, m.fileIdx, m.fileOff = 0, 0, 0, 0
 	m.target = repo.WorkTree

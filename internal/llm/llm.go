@@ -57,6 +57,7 @@ type Kind string
 const (
 	KindAnthropic Kind = "anthropic"
 	KindOpenAI    Kind = "openai"
+	KindOllama    Kind = "ollama" // API nativa do Ollama (aceita num_ctx)
 )
 
 // Provider é a configuração de conexão de um provedor.
@@ -86,6 +87,10 @@ type Options struct {
 	Effort    string // só Claude: low, medium, high, xhigh, max
 	MaxTokens int64
 	MaxSteps  int // máximo de rodadas de ferramenta por mensagem
+	// Tamanho do contexto do modelo, em tokens. Nos provedores compatíveis com OpenAI e no
+	// Ollama, guia a poda de resultados antigos; no Ollama também vira options.num_ctx.
+	// No Claude, a limpeza é feita pelo servidor (context editing).
+	ContextTokens int
 }
 
 func New(p Provider, o Options) (Chat, error) {
@@ -97,6 +102,8 @@ func New(p Provider, o Options) (Chat, error) {
 		return newAnthropic(p, o), nil
 	case KindOpenAI:
 		return newOpenAI(p, o), nil
+	case KindOllama:
+		return newOllama(p, o), nil
 	}
 	return nil, fmt.Errorf("tipo de provedor desconhecido: %q", p.Kind)
 }

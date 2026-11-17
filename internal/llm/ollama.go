@@ -13,7 +13,7 @@ import (
 
 // OllamaPull baixa um modelo no Ollama (POST /api/pull), avisando o progresso.
 func OllamaPull(ctx context.Context, baseURL, model string, progress func(status string, completed, total int64)) error {
-	root := strings.TrimSuffix(strings.TrimSuffix(baseURL, "/"), "/v1")
+	root := ollamaRoot(baseURL)
 	body, _ := json.Marshal(map[string]any{"model": model, "stream": true})
 	req, err := http.NewRequestWithContext(ctx, "POST", root+"/api/pull", bytes.NewReader(body))
 	if err != nil {

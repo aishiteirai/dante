@@ -189,6 +189,32 @@ antigo), `git_diff`, `grep`, `list_files`, `git_log` e `git_blame`. Todas ficam 
 pasta do repositório, sem shell e sem escrita. Para editar um arquivo, use `o`, que abre o
 arquivo no seu editor.
 
+### Segredos não saem da sua máquina
+
+- **Arquivos sensíveis são bloqueados** em todas as ferramentas: `.env*`, `*.pem`, `*.key`,
+  `id_rsa`, `credentials.json`, `.npmrc`, `*.tfstate` e outros. Os arquivos de exemplo
+  (`.env.example`, `*.pub`) continuam liberados. O diff de um arquivo bloqueado aparece como
+  "(diff omitido)", e o modelo vê só o nome.
+- **Valores com cara de segredo são mascarados** em tudo o que vai para o modelo: chaves da
+  Anthropic, OpenAI, AWS, GitHub, Slack e Google, JWTs, chaves privadas e atribuições como
+  `password = "..."`. Eles viram `«segredo omitido»`.
+- Ajuste no `config.json` com `arquivos_bloqueados` e `arquivos_liberados` (padrões glob).
+
+### Conversas longas
+
+Cada modelo tem um limite de contexto, e o dante cuida dele:
+- **Claude:** o próprio servidor limpa os resultados antigos de ferramentas quando a conversa
+  passa de 150 mil tokens.
+- **Outros provedores:** quando a conversa passa de 70% do `contexto` do provedor (no
+  `config.json`), o dante troca os resultados de ferramentas de rodadas anteriores por um
+  aviso. O modelo pode ler o arquivo de novo se precisar. Resultados grandes demais (mais de
+  1/4 do contexto) são cortados. Quando nem assim a conversa cabe, o chat avisa, e `ctrl+n`
+  começa outra.
+- **Ollama:** o dante usa a API nativa e define o tamanho do contexto (`num_ctx`, 16 mil
+  tokens por padrão). Sem isso, o Ollama usa uma janela pequena e corta o começo da conversa
+  sem avisar. Para revisões maiores, aumente `"contexto"` no provedor `ollama`. Mais contexto
+  usa mais memória.
+
 ### Diretrizes do time
 
 Se o repositório tiver `.dante/diretrizes.md`, `DANTE.md` ou `REVIEW.md`, o conteúdo vai

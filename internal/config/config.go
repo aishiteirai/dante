@@ -6,23 +6,27 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/aishiteirai/dante/internal/llm"
 )
 
 type Provider struct {
-	ID        string     `json:"id"`
-	Nome      string     `json:"nome"`
-	Tipo      llm.Kind   `json:"tipo"`                     // "anthropic" ou "openai" (compatível)
-	URL       string     `json:"url,omitempty"`            // base da API
-	ChaveEnv  string     `json:"chave_env,omitempty"`      // variável de ambiente com a chave
-	Chave     string     `json:"chave,omitempty"`          // chave direto no arquivo (evite)
-	Modelos   []string   `json:"modelos,omitempty"`        // lista fixa
-	Listar    bool       `json:"listar_modelos,omitempty"` // consulta GET /models (servidores locais)
-	Local     bool       `json:"local,omitempty"`
-	SiteChave string     `json:"site_chave,omitempty"` // onde gerar a chave
-	Filtro    string     `json:"filtro,omitempty"`     // "gratis": lista só modelos de preço zero
-	Sugeridos []Sugestao `json:"sugeridos,omitempty"`  // modelos para baixar (Ollama)
+	ID        string   `json:"id"`
+	Nome      string   `json:"nome"`
+	Tipo      llm.Kind `json:"tipo"`                     // "anthropic" ou "openai" (compatível)
+	URL       string   `json:"url,omitempty"`            // base da API
+	ChaveEnv  string   `json:"chave_env,omitempty"`      // variável de ambiente com a chave
+	Chave     string   `json:"chave,omitempty"`          // chave direto no arquivo (evite)
+	Modelos   []string `json:"modelos,omitempty"`        // lista fixa
+	Listar    bool     `json:"listar_modelos,omitempty"` // consulta GET /models (servidores locais)
+	Local     bool     `json:"local,omitempty"`
+	SiteChave string   `json:"site_chave,omitempty"` // onde gerar a chave
+	Filtro    string   `json:"filtro,omitempty"`     // "gratis": lista só modelos de preço zero
+	// Tamanho do contexto do modelo, em tokens. Guia a poda de resultados antigos; no
+	// Ollama também define o num_ctx (mais contexto usa mais memória).
+	Contexto  int        `json:"contexto,omitempty"`
+	Sugeridos []Sugestao `json:"sugeridos,omitempty"` // modelos para baixar (Ollama)
 
 	salva string // chave cadastrada pelo dante (credenciais.json)
 }
@@ -92,6 +96,10 @@ type Config struct {
 	UltimoModelo *Choice    `json:"ultimo_modelo,omitempty"`
 	Esforco      string     `json:"esforco"`
 	Confiados    []string   `json:"repositorios_confiados,omitempty"`
+	// Arquivos que o modelo não pode ler, além dos padrões do dante (.env, *.pem, id_rsa...),
+	// e exceções a eles. Padrões glob, comparados com o nome ou, se tiverem "/", com o caminho.
+	ArquivosBloqueados []string `json:"arquivos_bloqueados,omitempty"`
+	ArquivosLiberados  []string `json:"arquivos_liberados,omitempty"`
 	// Provedores padrão que este config já conhece; os novos são acrescentados ao carregar.
 	PadroesConhecidos []string `json:"padroes_conhecidos,omitempty"`
 }
@@ -104,16 +112,16 @@ func Defaults() Config {
 				SiteChave: "https://platform.claude.com/settings/keys",
 				Modelos:   []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}},
 			{ID: "deepseek", Nome: "DeepSeek", Tipo: llm.KindOpenAI, URL: "https://api.deepseek.com/v1",
-				ChaveEnv: "DEEPSEEK_API_KEY", SiteChave: "https://platform.deepseek.com/api_keys", Modelos: []string{"deepseek-chat", "deepseek-reasoner"}},
+				ChaveEnv: "DEEPSEEK_API_KEY", SiteChave: "https://platform.deepseek.com/api_keys", Contexto: 128000, Modelos: []string{"deepseek-chat", "deepseek-reasoner"}},
 			{ID: "qwen", Nome: "Qwen (Alibaba Cloud)", Tipo: llm.KindOpenAI,
 				URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", ChaveEnv: "DASHSCOPE_API_KEY",
-				SiteChave: "Alibaba Cloud Model Studio → API Key",
-				Modelos:   []string{"qwen3-coder-plus", "qwen-max", "qwen-plus"}},
+				SiteChave: "Alibaba Cloud Model Studio → API Key", Contexto: 128000,
+				Modelos: []string{"qwen3-coder-plus", "qwen-max", "qwen-plus"}},
 			{ID: "openrouter", Nome: "OpenRouter · modelos grátis", Tipo: llm.KindOpenAI,
 				URL: "https://openrouter.ai/api/v1", ChaveEnv: "OPENROUTER_API_KEY",
-				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis"},
-			{ID: "ollama", Nome: "Ollama (local, grátis)", Tipo: llm.KindOpenAI, URL: "http://localhost:11434/v1",
-				Listar: true, Local: true, Sugeridos: []Sugestao{
+				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis", Contexto: 32000},
+			{ID: "ollama", Nome: "Ollama (local, grátis)", Tipo: llm.KindOllama, URL: "http://localhost:11434",
+				Listar: true, Local: true, Contexto: 16384, Sugeridos: []Sugestao{
 					{Modelo: "qwen2.5-coder:7b", Tamanho: "4,7 GB", Nota: "bom para começar; ~8 GB de RAM"},
 					{Modelo: "qwen3:8b", Tamanho: "5,2 GB", Nota: "raciocina antes de responder"},
 					{Modelo: "deepseek-r1:8b", Tamanho: "5,2 GB", Nota: "DeepSeek local"},
@@ -121,7 +129,7 @@ func Defaults() Config {
 					{Modelo: "qwen3-coder:30b", Tamanho: "19 GB", Nota: "o mais forte; pede GPU ou 32 GB de RAM"},
 				}},
 			{ID: "lmstudio", Nome: "LM Studio (local, grátis)", Tipo: llm.KindOpenAI, URL: "http://localhost:1234/v1",
-				Listar: true, Local: true},
+				Listar: true, Local: true, Contexto: 8192},
 		},
 	}
 }
@@ -145,6 +153,13 @@ func (c *Config) mergeDefaults() (changed bool) {
 			changed = true
 		case i >= 0:
 			p := &c.Provedores[i]
+			// O Ollama passou a usar a API nativa, que aceita num_ctx.
+			if p.ID == "ollama" && p.Tipo == llm.KindOpenAI && strings.Contains(p.URL, ":11434") {
+				p.Tipo, p.URL, changed = llm.KindOllama, strings.TrimSuffix(strings.TrimSuffix(p.URL, "/"), "/v1"), true
+			}
+			if p.Contexto == 0 && d.Contexto > 0 {
+				p.Contexto, changed = d.Contexto, true
+			}
 			if p.SiteChave == "" && d.SiteChave != "" {
 				p.SiteChave, changed = d.SiteChave, true
 			}

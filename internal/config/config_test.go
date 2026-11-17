@@ -73,6 +73,12 @@ func TestMigracaoDeConfigAntigo(t *testing.T) {
 	if o, _ := c.Provider("ollama"); len(o.Sugeridos) == 0 {
 		t.Fatal("Ollama deveria ganhar as sugestões")
 	}
+	if o, _ := c.Provider("ollama"); o.Tipo != "ollama" || o.URL != "http://localhost:11434" || o.Contexto != 16384 {
+		t.Fatalf("Ollama deveria migrar para a API nativa: %+v", o)
+	}
+	if d, _ := c.Provider("deepseek"); d.Contexto != 128000 {
+		t.Fatalf("contexto do DeepSeek = %d", d.Contexto)
+	}
 	// Se o usuário apagar o OpenRouter, ele não volta.
 	var rest []Provider
 	for _, p := range c.Provedores {
