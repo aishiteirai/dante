@@ -7,7 +7,7 @@ import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -110,6 +110,9 @@ def build_options(root: Path, cfg: ReviewConfig) -> ClaudeAgentOptions:
     )
 
 
+EventCallback = Callable[[dict[str, Any]], None]
+
+
 def _log(cfg: ReviewConfig, msg: str) -> None:
     if cfg.verbose:
         print(msg, file=sys.stderr, flush=True)
@@ -121,6 +124,7 @@ async def run_review(
     cfg: ReviewConfig,
     guidelines: str | None = None,
     extra_instructions: str | None = None,
+    on_event: EventCallback | None = None,
 ) -> ReviewResult:
     prompt = build_prompt(target, guidelines, cfg.max_inline_diff_chars, extra_instructions)
     final: ResultMessage | None = None
@@ -131,8 +135,12 @@ async def run_review(
                 if isinstance(block, ToolUseBlock):
                     arg = block.input.get("command") or block.input.get("file_path") or block.input.get("pattern") or ""
                     _log(cfg, f"  · {block.name} {arg}")
+                    if on_event and block.name != "StructuredOutput":
+                        on_event({"tipo": "ferramenta", "nome": block.name, "arg": str(arg)})
                 elif isinstance(block, TextBlock) and block.text.strip():
                     _log(cfg, f"  » {block.text.strip()[:200]}")
+                    if on_event:
+                        on_event({"tipo": "texto", "texto": block.text.strip()})
         elif isinstance(msg, ResultMessage):
             final = msg
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import history
@@ -21,7 +23,7 @@ from .git_utils import (
     staged_target,
     working_target,
 )
-from .report import ICON, to_json, to_markdown, worst_severity
+from .report import ICON, sort_findings, to_json, to_markdown, worst_severity
 from .schema import SEVERITIES
 
 GUIDELINE_FILES = [".revisor/diretrizes.md", "REVIEW.md", ".github/REVIEW.md"]
@@ -39,7 +41,7 @@ def find_guidelines(root: Path, explicit: str | None) -> str | None:
 
 def collect_targets(args: argparse.Namespace, root: Path) -> list[ReviewTarget]:
     if args.commit:
-        shas = [args.commit]
+        shas = args.commit
     elif args.intervalo:
         shas = commits_in_range(args.intervalo, root)
     elif args.ultimos:
@@ -75,48 +77,81 @@ async def cmd_revisar(args: argparse.Namespace) -> int:
     guidelines = find_guidelines(root, args.diretrizes)
     targets = [t.load(root) for t in collect_targets(args, root)]
     targets = [t for t in targets if not t.empty]
+    emit = (lambda ev: print(json.dumps(ev, ensure_ascii=False), flush=True)) if args.eventos else None
+    if emit:
+        emit({"tipo": "alvos", "repo": str(root), "alvos": [
+            {"descricao": t.label, "commit": t.commit_sha, "arquivos": t.files} for t in targets
+        ]})
     if not targets:
-        print("Nada para revisar.", file=sys.stderr)
+        if emit:
+            emit({"tipo": "fim", "codigo": 0})
+        else:
+            print("Nada para revisar.", file=sys.stderr)
         return 0
 
     results: list[ReviewResult] = []
     for i, t in enumerate(targets, 1):
-        print(f"[{i}/{len(targets)}] Revisando {t.label} ({len(t.files)} arquivo(s))...", file=sys.stderr)
-        r = await run_review(t, root, cfg, guidelines, args.instrucoes)
+        if emit:
+            emit({"tipo": "inicio", "indice": i, "total": len(targets), "descricao": t.label})
+        else:
+            print(f"[{i}/{len(targets)}] Revisando {t.label} ({len(t.files)} arquivo(s))...", file=sys.stderr)
+        r = await run_review(t, root, cfg, guidelines, args.instrucoes, on_event=emit)
         results.append(r)
-        if not args.sem_historico:
-            print(f"  salvo em {history.save(r, root).relative_to(root)}", file=sys.stderr)
-        if not args.json:
+        if args.sem_historico:
+            record = history.record_from(r, datetime.now(timezone.utc))
+        else:
+            path, record = history.save(r, root)
+            if not emit:
+                print(f"  salvo em {path}", file=sys.stderr)
+        if emit:
+            record["achados"] = sort_findings(record["achados"])
+            emit({"tipo": "resultado", "indice": i, "revisao": record})
+        elif not args.json:
             print(to_markdown(r) + "\n")
 
+    code = exit_code(results, args.falhar_em)
+    if emit:
+        emit({"tipo": "fim", "codigo": code})
+        return code
     if args.json:
         print(to_json(results))
     if args.saida:
         Path(args.saida).write_text("\n\n---\n\n".join(to_markdown(r) for r in results), encoding="utf-8")
 
+    return code
+
+
+def exit_code(results: list[ReviewResult], falhar_em: str | None) -> int:
     if any(r.error for r in results):
         return 2
     worst = worst_severity(results)
-    if args.falhar_em and worst and SEVERITIES.index(worst) <= SEVERITIES.index(args.falhar_em):
+    if falhar_em and worst and SEVERITIES.index(worst) <= SEVERITIES.index(falhar_em):
         return 1
     return 0
 
 
 def cmd_historico(args: argparse.Namespace) -> int:
     root = repo_root(Path(args.repo).resolve())
+    if args.caminho:
+        print(history.history_dir(root))
+        return 0
     records = history.load_all(root)
     if args.commit:
         records = [r for r in records if (r["alvo"].get("commit") or "").startswith(args.commit)]
+    records = records[-args.limite:]
+    if args.json:
+        print(json.dumps(records, ensure_ascii=False))
+        return 0
     if not records:
         print("Nenhuma revisão no histórico.")
         return 0
-    for r in records[-args.limite:]:
+    for r in records:
         cont = Counter(a["severidade"] for a in r["achados"])
         sev = " ".join(f"{ICON[s]}{cont[s]}" for s in SEVERITIES if cont[s]) or "✅"
         if r.get("erro"):
             sev = "⚠️ erro"
         custo = f"US$ {r['custo_usd']:.3f}" if r.get("custo_usd") is not None else ""
-        print(f"{r['data'][:19]}  {sev:<14} {r['alvo']['descricao'][:70]:<70} {custo}  {r['_arquivo']}")
+        print(f"{r['data'][:19]}  {sev:<14} {r['alvo']['descricao'][:70]:<70} {custo}  {Path(r['_arquivo']).name}")
     return 0
 
 
@@ -129,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     alvo = r.add_mutually_exclusive_group()
     alvo.add_argument("--staged", action="store_true", help="Só o que está em stage.")
     alvo.add_argument("--base", metavar="REF", help="Branch atual vs REF (ex.: main).")
-    alvo.add_argument("--commit", metavar="SHA", help="Um commit específico.")
+    alvo.add_argument("--commit", metavar="SHA", action="append", help="Um commit (pode repetir).")
     alvo.add_argument("--intervalo", metavar="A..B", help="Cada commit do intervalo, um por vez.")
     alvo.add_argument("--ultimos", type=int, metavar="N", help="Os últimos N commits, um por vez.")
     r.add_argument("--pular-revisados", action="store_true", help="Pula commits que já estão no histórico.")
@@ -142,12 +177,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--falhar-em", choices=SEVERITIES, help="Sai com código 1 se houver achado com essa severidade ou pior.")
     r.add_argument("--json", action="store_true", help="Imprime JSON em vez de markdown.")
     r.add_argument("--saida", metavar="ARQ", help="Também grava o relatório markdown nesse arquivo.")
-    r.add_argument("--sem-historico", action="store_true", help="Não grava em .revisor/historico/.")
+    r.add_argument("--sem-historico", action="store_true", help="Não grava no histórico.")
+    r.add_argument("--eventos", action="store_true", help="Emite eventos JSONL no stdout (usado pela interface Go).")
     r.add_argument("-v", "--verbose", action="store_true", help="Mostra as ferramentas que o agente usa.")
 
     h = sub.add_parser("historico", help="Lista revisões anteriores.")
     h.add_argument("--commit", metavar="SHA", help="Filtra por commit (prefixo).")
     h.add_argument("--limite", type=int, default=30)
+    h.add_argument("--json", action="store_true", help="Registros completos em JSON.")
+    h.add_argument("--caminho", action="store_true", help="Mostra onde o histórico deste repo fica.")
 
     args = p.parse_args(argv)
     try:
