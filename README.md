@@ -20,6 +20,28 @@ ctrl+space comandos · alt+setas foco · ↑↓ arquivo · r revisar · o editor
 
 ## Instalação
 
+### Windows (PowerShell, sem administrador)
+
+```powershell
+irm https://raw.githubusercontent.com/aishiteirai/dante/main/scripts/instalar.ps1 | iex
+```
+
+O script baixa o `dante.exe` da última Release, confere o SHA-256, instala em
+`%LOCALAPPDATA%\dante` e coloca essa pasta no PATH do usuário. Para atualizar, rode de novo.
+Se a rede bloquear o script, baixe `dante-windows-amd64.exe` na página de
+[Releases](https://github.com/aishiteirai/dante/releases).
+
+### Linux e macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aishiteirai/dante/main/scripts/instalar.sh | sh
+```
+
+Instala em `~/.local/bin` (troque com `DANTE_DIR`). Nos dois scripts, `DANTE_VERSAO=v0.5.0`
+escolhe uma versão específica.
+
+### A partir do código
+
 Requisitos: Go ≥ 1.25 (ou um Go mais antigo com `GOTOOLCHAIN=auto`, o padrão, que baixa o
 1.25 sozinho) e git.
 
@@ -27,15 +49,23 @@ Requisitos: Go ≥ 1.25 (ou um Go mais antigo com `GOTOOLCHAIN=auto`, o padrão,
 go install github.com/aishiteirai/dante/cmd/dante@latest
 ```
 
-Ou a partir do código:
+Ou, num clone, `make install`, que instala o binário em `~/.local/bin/dante`.
+
+Em qualquer caso, o dante precisa do `git` instalado. `dante --versao` mostra a versão.
+
+### Publicar uma versão
+
+Cada tag `v*` enviada ao GitHub dispara o workflow `release`. Ele testa, compila para
+Windows, Linux e macOS (amd64 e arm64) e publica uma Release com os binários e o
+`SHA256SUMS.txt`, que é de onde os scripts acima baixam:
 
 ```bash
-git clone https://github.com/aishiteirai/dante.git && cd dante
-make install        # instala o binário em ~/.local/bin/dante
+git tag v0.5.0 && git push origin v0.5.0
 ```
 
-O `dante` é um binário único: não precisa de Python nem da pasta do projeto depois de
-instalado.
+Para só compilar, sem publicar nada, rode o workflow pela aba **Actions → release → Run
+workflow**: os binários ficam como artefato da execução. Localmente, `make dist VERSAO=v0.5.0`
+gera os mesmos arquivos em `dist/`.
 
 ## Modelos
 

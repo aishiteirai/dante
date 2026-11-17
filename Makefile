@@ -3,7 +3,7 @@ PYTHON ?= python3
 VENV   ?= $(CURDIR)/.venv
 VPY     = $(VENV)/bin/python
 
-.PHONY: install build test install-cli test-cli clean
+.PHONY: install build test dist install-cli test-cli clean
 
 # O dante é um binário Go independente: não precisa de Python.
 install: build
@@ -21,6 +21,10 @@ build:
 
 test:
 	go vet ./... && go test ./...
+
+# Binários de todas as plataformas em dist/ (o mesmo que o workflow de release faz).
+dist:
+	scripts/compilar.sh $(or $(VERSAO),dev) dist
 
 # ---- opcional: CLI `revisor` em Python (Claude Agent SDK), para hooks e CI ----
 
@@ -41,4 +45,4 @@ test-cli: $(VPY)
 	$(VPY) -m pytest -q
 
 clean:
-	rm -rf dante revisor-tui $(VENV)
+	rm -rf dante revisor-tui dist $(VENV)

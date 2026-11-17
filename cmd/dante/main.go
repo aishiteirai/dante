@@ -7,11 +7,16 @@ import (
 	"os"
 
 	"github.com/aishiteirai/dante/internal/config"
+	"github.com/aishiteirai/dante/internal/llm"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
+// version é gravada na compilação: go build -ldflags "-X main.version=v0.5.0".
+var version = "dev"
+
 func main() {
+	showVersion := flag.Bool("versao", false, "mostra a versão do dante e sai")
 	repoFlag := flag.String("repo", "", "abre direto este repositório (caminho, URL ou dono/repo), sem a tela inicial")
 	modelFlag := flag.String("modelo", "", "usa este modelo sem perguntar, como provedor/modelo (ex.: deepseek/deepseek-chat)")
 	effort := flag.String("esforco", "", "esforço do Claude: low, medium, high, xhigh, max")
@@ -23,6 +28,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nConfiguração de provedores e modelos: %s\n", config.Path())
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("dante", version)
+		return
+	}
+	llm.UserAgent = "dante/" + version + " (+https://github.com/aishiteirai/dante)"
 
 	cfg, err := config.Load()
 	if err != nil {
