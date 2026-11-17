@@ -9,7 +9,20 @@ set -eu
 
 repo=aishiteirai/dante
 base=${DANTE_URL_BASE:-https://github.com/$repo/releases}
-if [ -n "${DANTE_VERSAO:-}" ]; then release="$base/download/$DANTE_VERSAO"; else release="$base/latest/download"; fi
+api=${DANTE_API:-https://api.github.com/repos/$repo}
+
+# Sem DANTE_VERSAO: a Release mais recente. O link "latest" do GitHub ignora pré-releases
+# (ex.: v0.5.0-alpha); sem nenhuma versão estável, usa a mais recente de todas.
+versao=${DANTE_VERSAO:-}
+if [ -z "$versao" ] && ! curl -fsI -o /dev/null "$base/latest/download/SHA256SUMS.txt"; then
+  versao=$(curl -fsSL "$api/releases?per_page=1" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/') || true
+  if [ -z "$versao" ]; then
+    echo "Ainda não há Release publicada em https://github.com/$repo/releases" >&2
+    exit 1
+  fi
+  echo "Sem versão estável; usando a pré-release $versao."
+fi
+if [ -n "$versao" ]; then release="$base/download/$versao"; else release="$base/latest/download"; fi
 dir=${DANTE_DIR:-$HOME/.local/bin}
 
 case "$(uname -s)" in

@@ -1,26 +1,39 @@
-# Compila o dante para Windows, Linux e macOS.
+# Compila o dante para Windows, Linux e macOS e publica os binários numa Release.
 #
-# - Tag "v*" (ex.: git tag v0.5.0 && git push origin v0.5.0): testa, compila e publica uma
-#   Release com os binários e o SHA256SUMS.txt. É dela que os scripts de instalação baixam.
-# - Rodar à mão (aba Actions → release → Run workflow): só compila e deixa os binários como
-#   artefato da execução, sem publicar nada.
+# - Tag "v*" (ex.: git tag v0.5.0 && git push origin v0.5.0, ou criando a Release pelo
+#   site): testa, compila e anexa os binários e o SHA256SUMS.txt à Release da tag. Se a
+#   Release ainda não existe, ela é criada; se já existe (criada pelo site), os arquivos são
+#   acrescentados. Tags com "-" (ex.: v0.5.0-alpha) viram pré-release.
+# - Rodar à mão (aba Actions → release → Run workflow):
+#     * com uma tag no campo "tag": compila o código daquela tag e publica na Release dela
+#       (serve para refazer uma publicação que falhou);
+#     * sem tag: só compila e deixa os binários como artefato da execução.
 name: release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a publicar (vazio = só compilar, sem publicar)"
+        required: false
+        default: ""
 
 permissions:
-  contents: write # criar a Release
+  contents: write # criar a Release e anexar os arquivos
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -28,15 +41,23 @@ jobs:
         run: go vet ./... && go test ./...
 
       - name: Compila
-        run: scripts/compilar.sh "${GITHUB_REF_NAME}" dist
+        run: scripts/compilar.sh "${TAG:-dev-${GITHUB_SHA::7}}" dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
-          name: dante-${{ github.ref_name }}
+          name: dante-${{ env.TAG || github.sha }}
           path: dist/
 
-      - name: Publica a Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publica na Release
+        if: env.TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "dante $GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: |
+          pre=""
+          case "$TAG" in *-*) pre="--prerelease" ;; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A Release $TAG já existe: anexando os arquivos."
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "dante $TAG" --generate-notes --verify-tag $pre
+          fi
