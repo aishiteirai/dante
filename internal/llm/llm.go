@@ -78,7 +78,8 @@ type Provider struct {
 
 // UserAgent identifica o dante nas requisições HTTP (alguns provedores, como o OpenCode
 // Go, pedem que o cliente se identifique em vez de usar o nome da biblioteca HTTP).
-const UserAgent = "dante/0.4 (+https://github.com/aishiteirai/dante)"
+// O main troca pela versão real (gravada na compilação de cada release).
+var UserAgent = "dante/dev (+https://github.com/aishiteirai/dante)"
 
 // newSessionID gera um ID de conversa no formato ses_<hex>.
 func newSessionID() string {
