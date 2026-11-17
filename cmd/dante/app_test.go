@@ -147,3 +147,38 @@ func TestFluxoDaChave(t *testing.T) {
 		t.Fatalf("depois de salvar: tela=%d modelo=%s", m.screen, m.modelName)
 	}
 }
+
+func TestSugestoesDoOllama(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	cfg, _ := config.Load()
+	m := newModel(cfg, "", "")
+	m.screen = scrModel
+	m.enterModelScreen()
+	nm, _ := m.Update(modelsListedMsg{prov: "ollama", models: []string{"qwen2.5-coder:7b"}})
+	m = nm.(model)
+	var downloads []string
+	idx := -1
+	for i, r := range m.modelRows {
+		if r.download {
+			downloads = append(downloads, r.model)
+			if r.model == "qwen3:8b" {
+				idx = i
+			}
+		}
+	}
+	if len(downloads) != 4 || strings.Contains(strings.Join(downloads, ","), "qwen2.5-coder:7b") {
+		t.Fatalf("sugestões = %v (a já baixada não deve aparecer)", downloads)
+	}
+	m.modelIdx = idx
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = nm.(model)
+	if m.pulling != "qwen3:8b" || cmd == nil {
+		t.Fatalf("enter deveria baixar; pulling=%q", m.pulling)
+	}
+	m.pullCancel()
+	nm, _ = m.Update(pullDoneMsg{prov: m.modelRows[idx].prov, model: "qwen3:8b"})
+	m = nm.(model)
+	if m.pulling != "" || m.modelWant == nil || m.modelWant.Modelo != "qwen3:8b" {
+		t.Fatal("depois do download, o modelo deveria ficar pré-selecionado")
+	}
+}

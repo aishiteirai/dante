@@ -11,16 +11,18 @@ import (
 )
 
 type Provider struct {
-	ID        string   `json:"id"`
-	Nome      string   `json:"nome"`
-	Tipo      llm.Kind `json:"tipo"`                     // "anthropic" ou "openai" (compatível)
-	URL       string   `json:"url,omitempty"`            // base da API
-	ChaveEnv  string   `json:"chave_env,omitempty"`      // variável de ambiente com a chave
-	Chave     string   `json:"chave,omitempty"`          // chave direto no arquivo (evite)
-	Modelos   []string `json:"modelos,omitempty"`        // lista fixa
-	Listar    bool     `json:"listar_modelos,omitempty"` // consulta GET /models (servidores locais)
-	Local     bool     `json:"local,omitempty"`
-	SiteChave string   `json:"site_chave,omitempty"` // onde gerar a chave
+	ID        string     `json:"id"`
+	Nome      string     `json:"nome"`
+	Tipo      llm.Kind   `json:"tipo"`                     // "anthropic" ou "openai" (compatível)
+	URL       string     `json:"url,omitempty"`            // base da API
+	ChaveEnv  string     `json:"chave_env,omitempty"`      // variável de ambiente com a chave
+	Chave     string     `json:"chave,omitempty"`          // chave direto no arquivo (evite)
+	Modelos   []string   `json:"modelos,omitempty"`        // lista fixa
+	Listar    bool       `json:"listar_modelos,omitempty"` // consulta GET /models (servidores locais)
+	Local     bool       `json:"local,omitempty"`
+	SiteChave string     `json:"site_chave,omitempty"` // onde gerar a chave
+	Filtro    string     `json:"filtro,omitempty"`     // "gratis": lista só modelos de preço zero
+	Sugeridos []Sugestao `json:"sugeridos,omitempty"`  // modelos para baixar (Ollama)
 
 	salva string // chave cadastrada pelo dante (credenciais.json)
 }
@@ -73,6 +75,13 @@ func (p Provider) HasKey() bool {
 	return p.Local || p.KeySource() != ""
 }
 
+// Sugestao é um modelo que o dante oferece para baixar num servidor local.
+type Sugestao struct {
+	Modelo  string `json:"modelo"`
+	Tamanho string `json:"tamanho"`
+	Nota    string `json:"nota,omitempty"`
+}
+
 type Choice struct {
 	Provedor string `json:"provedor"`
 	Modelo   string `json:"modelo"`
@@ -83,6 +92,8 @@ type Config struct {
 	UltimoModelo *Choice    `json:"ultimo_modelo,omitempty"`
 	Esforco      string     `json:"esforco"`
 	Confiados    []string   `json:"repositorios_confiados,omitempty"`
+	// Provedores padrão que este config já conhece; os novos são acrescentados ao carregar.
+	PadroesConhecidos []string `json:"padroes_conhecidos,omitempty"`
 }
 
 func Defaults() Config {
@@ -98,12 +109,55 @@ func Defaults() Config {
 				URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", ChaveEnv: "DASHSCOPE_API_KEY",
 				SiteChave: "Alibaba Cloud Model Studio → API Key",
 				Modelos:   []string{"qwen3-coder-plus", "qwen-max", "qwen-plus"}},
-			{ID: "ollama", Nome: "Ollama (local)", Tipo: llm.KindOpenAI, URL: "http://localhost:11434/v1",
-				Listar: true, Local: true},
-			{ID: "lmstudio", Nome: "LM Studio (local)", Tipo: llm.KindOpenAI, URL: "http://localhost:1234/v1",
+			{ID: "openrouter", Nome: "OpenRouter · modelos grátis", Tipo: llm.KindOpenAI,
+				URL: "https://openrouter.ai/api/v1", ChaveEnv: "OPENROUTER_API_KEY",
+				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis"},
+			{ID: "ollama", Nome: "Ollama (local, grátis)", Tipo: llm.KindOpenAI, URL: "http://localhost:11434/v1",
+				Listar: true, Local: true, Sugeridos: []Sugestao{
+					{Modelo: "qwen2.5-coder:7b", Tamanho: "4,7 GB", Nota: "bom para começar; ~8 GB de RAM"},
+					{Modelo: "qwen3:8b", Tamanho: "5,2 GB", Nota: "raciocina antes de responder"},
+					{Modelo: "deepseek-r1:8b", Tamanho: "5,2 GB", Nota: "DeepSeek local"},
+					{Modelo: "qwen2.5-coder:14b", Tamanho: "9,0 GB", Nota: "revisões melhores; ~16 GB de RAM"},
+					{Modelo: "qwen3-coder:30b", Tamanho: "19 GB", Nota: "o mais forte; pede GPU ou 32 GB de RAM"},
+				}},
+			{ID: "lmstudio", Nome: "LM Studio (local, grátis)", Tipo: llm.KindOpenAI, URL: "http://localhost:1234/v1",
 				Listar: true, Local: true},
 		},
 	}
+}
+
+// mergeDefaults acrescenta provedores padrão novos e completa campos de configs antigos.
+func (c *Config) mergeDefaults() (changed bool) {
+	known := map[string]bool{}
+	for _, id := range c.PadroesConhecidos {
+		known[id] = true
+	}
+	for _, d := range Defaults().Provedores {
+		i := -1
+		for j, p := range c.Provedores {
+			if p.ID == d.ID {
+				i = j
+			}
+		}
+		switch {
+		case i < 0 && !known[d.ID]: // provedor novo nesta versão
+			c.Provedores = append(c.Provedores, d)
+			changed = true
+		case i >= 0:
+			p := &c.Provedores[i]
+			if p.SiteChave == "" && d.SiteChave != "" {
+				p.SiteChave, changed = d.SiteChave, true
+			}
+			if len(p.Sugeridos) == 0 && len(d.Sugeridos) > 0 && !known[d.ID] {
+				p.Sugeridos, changed = d.Sugeridos, true
+			}
+		}
+		if !known[d.ID] {
+			c.PadroesConhecidos = append(c.PadroesConhecidos, d.ID)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func Dir() string {
@@ -169,6 +223,7 @@ func Load() (Config, error) {
 	b, err := os.ReadFile(Path())
 	if os.IsNotExist(err) {
 		c := Defaults()
+		c.mergeDefaults()
 		c.applyCredentials()
 		return c, c.Save()
 	}
@@ -182,11 +237,8 @@ func Load() (Config, error) {
 	if len(c.Provedores) == 0 {
 		c.Provedores = Defaults().Provedores
 	}
-	// Completa o site da chave em configs antigos.
-	for i, p := range c.Provedores {
-		if d, ok := Defaults().Provider(p.ID); ok && p.SiteChave == "" {
-			c.Provedores[i].SiteChave = d.SiteChave
-		}
+	if c.mergeDefaults() {
+		_ = c.Save()
 	}
 	c.applyCredentials()
 	if c.Esforco == "" {

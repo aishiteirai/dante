@@ -206,3 +206,47 @@ func TestCheckKey(t *testing.T) {
 		t.Errorf("fora do ar: %v", err)
 	}
 }
+
+func TestListModelsGratis(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[
+		 {"id":"anthropic/claude-x","pricing":{"prompt":"0.000003","completion":"0.000015"},"supported_parameters":["tools"]},
+		 {"id":"meta/llama:free","pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"]},
+		 {"id":"deepseek/deepseek-chat:free","pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools","temperature"]},
+		 {"id":"qwen/qwen3-coder:free","pricing":{"prompt":"0","completion":"0.0"},"supported_parameters":["tools"]},
+		 {"id":"x/sem-ferramentas:free","pricing":{"prompt":"0","completion":"0"},"supported_parameters":["temperature"]}
+		]}`)
+	}))
+	defer srv.Close()
+	got, err := ListModels(context.Background(), Provider{BaseURL: srv.URL}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "qwen/qwen3-coder:free,deepseek/deepseek-chat:free,meta/llama:free"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("got %v", got)
+	}
+	all, _ := ListModels(context.Background(), Provider{BaseURL: srv.URL}, false)
+	if len(all) != 5 {
+		t.Fatalf("sem filtro: %v", all)
+	}
+}
+
+func TestOllamaPull(t *testing.T) {
+	var pedido string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		pedido = r.URL.Path + " " + string(b)
+		fmt.Fprintln(w, `{"status":"pulling manifest"}`)
+		fmt.Fprintln(w, `{"status":"pulling abc","total":100,"completed":40}`)
+		fmt.Fprintln(w, `{"status":"success"}`)
+	}))
+	defer srv.Close()
+	var passos []string
+	err := OllamaPull(context.Background(), srv.URL+"/v1", "qwen3:8b", func(s string, done, total int64) {
+		passos = append(passos, fmt.Sprintf("%s %d/%d", s, done, total))
+	})
+	if err != nil || !strings.HasPrefix(pedido, "/api/pull ") || !strings.Contains(pedido, `"qwen3:8b"`) || len(passos) != 3 {
+		t.Fatalf("err=%v pedido=%q passos=%v", err, pedido, passos)
+	}
+}

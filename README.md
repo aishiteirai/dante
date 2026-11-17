@@ -63,14 +63,39 @@ Também dá para usar variáveis de ambiente, como antes: `ANTHROPIC_API_KEY`,
 `DEEPSEEK_API_KEY` ou `DASHSCOPE_API_KEY`. Quando há as duas, a chave salva no dante tem
 prioridade.
 
-### Modelos locais
+### Modelos grátis
 
-Ollama e LM Studio não precisam de chave. Eles são detectados sozinhos, e seus modelos
-aparecem na lista. Para rodar DeepSeek ou Qwen de graça na sua máquina:
+Há duas opções sem custo, e as duas aparecem na tela de modelos.
 
-```bash
-ollama pull qwen2.5-coder:14b    # ou deepseek-coder-v2, qwen3-coder...
-```
+**Ollama (local).** O modelo roda no seu computador: sem conta, sem chave, e seu código não
+sai da máquina.
+
+1. Instale o Ollama em https://ollama.com e deixe-o aberto.
+2. Na tela de modelos, as sugestões aparecem com `↓`. Pressione `enter` numa delas para
+   baixar, com o progresso na tela. Ao terminar, o modelo já fica pronto para usar.
+
+| Modelo | Download | Para quem |
+|---|---|---|
+| `qwen2.5-coder:7b` | 4,7 GB | bom para começar; ~8 GB de RAM |
+| `qwen3:8b` | 5,2 GB | raciocina antes de responder |
+| `deepseek-r1:8b` | 5,2 GB | DeepSeek local |
+| `qwen2.5-coder:14b` | 9,0 GB | revisões melhores; ~16 GB de RAM |
+| `qwen3-coder:30b` | 19 GB | o mais forte; pede GPU ou 32 GB de RAM |
+
+O LM Studio também funciona: os modelos carregados nele aparecem sozinhos.
+
+**OpenRouter (nuvem, grátis com limite).** O dante lista ao vivo os modelos de preço zero do
+OpenRouter que aceitam ferramentas, como as versões grátis de DeepSeek e Qwen. Eles aparecem
+primeiro na lista.
+
+1. Crie uma conta gratuita em https://openrouter.ai e gere uma chave em
+   https://openrouter.ai/settings/keys.
+2. Escolha um modelo `…:free` e cole a chave quando o dante pedir.
+
+Os modelos grátis do OpenRouter têm limite de requisições por minuto e por dia. Alguns só
+funcionam se você liberar, em https://openrouter.ai/settings/privacy, que o provedor use os
+dados enviados. Se faltar essa permissão, o dante mostra o aviso. Para código privado, prefira
+o Ollama.
 
 Use um modelo com suporte a ferramentas (*tool calling*). Modelos pequenos (menos de 7B)
 costumam errar as chamadas.

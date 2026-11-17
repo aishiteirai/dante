@@ -67,12 +67,15 @@ type model struct {
 	opening     bool
 
 	// escolha do modelo
-	modelRows []modelRow
-	modelIdx  int
-	modelOff  int
-	modelWant *config.Choice
-	listed    map[string][]string
-	listErr   map[string]string
+	modelRows  []modelRow
+	modelIdx   int
+	modelOff   int
+	modelWant  *config.Choice
+	pulling    string // modelo sendo baixado no Ollama
+	pullStatus string
+	pullCancel context.CancelFunc
+	listed     map[string][]string
+	listErr    map[string]string
 
 	// cadastro de chave
 	keyProv       config.Provider
@@ -253,9 +256,9 @@ func loadDiff(r repo.Repo, target, path string) tea.Cmd {
 
 func listModels(p config.Provider) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		ms, err := llm.ListModels(ctx, p.LLM())
+		ms, err := llm.ListModels(ctx, p.LLM(), p.Filtro == "gratis")
 		return modelsListedMsg{prov: p.ID, models: ms, err: err}
 	}
 }
@@ -284,11 +287,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cancel != nil {
 				m.cancel()
 			}
+			if m.pullCancel != nil {
+				m.pullCancel()
+			}
 			return m, tea.Quit
 		}
 
 	case spinner.TickMsg:
-		if m.opening || m.streaming || m.keyChecking {
+		if m.opening || m.streaming || m.keyChecking || m.pulling != "" {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 			if m.streaming {
@@ -303,6 +309,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case keyCheckedMsg:
 		return m.onKeyChecked(msg)
+
+	case pullProgressMsg:
+		m.pullStatus = msg.text
+		return m, waitFor(msg.ch)
+
+	case pullDoneMsg:
+		return m.onPullDone(msg)
 
 	case modelsListedMsg:
 		if msg.err != nil {

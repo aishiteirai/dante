@@ -57,3 +57,33 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestMigracaoDeConfigAntigo(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DANTE_CONFIG", dir)
+	// Config de uma versão anterior: sem OpenRouter e sem sugestões do Ollama.
+	antigo := `{"provedores":[{"id":"deepseek","nome":"DeepSeek","tipo":"openai","url":"https://api.deepseek.com/v1"},
+	 {"id":"ollama","nome":"Ollama","tipo":"openai","url":"http://localhost:11434/v1","listar_modelos":true,"local":true}],
+	 "esforco":"high"}`
+	os.WriteFile(Path(), []byte(antigo), 0o600)
+	c, _ := Load()
+	if _, ok := c.Provider("openrouter"); !ok {
+		t.Fatal("OpenRouter deveria ter sido acrescentado")
+	}
+	if o, _ := c.Provider("ollama"); len(o.Sugeridos) == 0 {
+		t.Fatal("Ollama deveria ganhar as sugestões")
+	}
+	// Se o usuário apagar o OpenRouter, ele não volta.
+	var rest []Provider
+	for _, p := range c.Provedores {
+		if p.ID != "openrouter" {
+			rest = append(rest, p)
+		}
+	}
+	c.Provedores = rest
+	_ = c.Save()
+	c2, _ := Load()
+	if _, ok := c2.Provider("openrouter"); ok {
+		t.Fatal("provedor removido pelo usuário voltou")
+	}
+}

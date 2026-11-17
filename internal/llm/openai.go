@@ -272,6 +272,10 @@ func httpError(status int, body []byte, p Provider) error {
 		}
 		return fmt.Errorf("chave de API recusada pelo provedor%s: %s", hint, msg)
 	case 404:
+		if strings.Contains(strings.ToLower(msg), "data policy") || strings.Contains(strings.ToLower(msg), "privacy") {
+			return fmt.Errorf("o OpenRouter bloqueou este modelo pela sua política de dados; os modelos grátis "+
+				"exigem liberar o uso dos dados em https://openrouter.ai/settings/privacy (%s)", msg)
+		}
 		return fmt.Errorf("modelo ou endpoint não encontrado: %s", msg)
 	case 429:
 		return fmt.Errorf("limite de requisições atingido: %s", msg)
@@ -279,8 +283,10 @@ func httpError(status int, body []byte, p Provider) error {
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
 
-// ListModels consulta GET /models (Ollama, LM Studio, vLLM...).
-func ListModels(ctx context.Context, p Provider) ([]string, error) {
+// ListModels consulta GET /models (Ollama, LM Studio, vLLM, OpenRouter...). Com onlyFree,
+// devolve só os modelos de preço zero que aceitam ferramentas (formato do OpenRouter),
+// com DeepSeek e Qwen primeiro.
+func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(p.BaseURL, "/")+"/models", nil)
 	if err != nil {
 		return nil, err
@@ -288,7 +294,7 @@ func ListModels(ctx context.Context, p Provider) ([]string, error) {
 	if k := p.Key(); k != "" {
 		req.Header.Set("Authorization", "Bearer "+k)
 	}
-	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +304,12 @@ func ListModels(ctx context.Context, p Provider) ([]string, error) {
 	}
 	var out struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID      string `json:"id"`
+			Pricing *struct {
+				Prompt     string `json:"prompt"`
+				Completion string `json:"completion"`
+			} `json:"pricing"`
+			SupportedParameters []string `json:"supported_parameters"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -306,8 +317,47 @@ func ListModels(ctx context.Context, p Provider) ([]string, error) {
 	}
 	var ids []string
 	for _, d := range out.Data {
+		if onlyFree {
+			if d.Pricing == nil || !isZero(d.Pricing.Prompt) || !isZero(d.Pricing.Completion) {
+				continue
+			}
+			if d.SupportedParameters != nil && !contains(d.SupportedParameters, "tools") {
+				continue // sem ferramentas o modelo não consegue abrir arquivos
+			}
+		}
 		ids = append(ids, d.ID)
 	}
-	sort.Strings(ids)
+	rank := func(id string) int {
+		l := strings.ToLower(id)
+		switch {
+		case strings.Contains(l, "qwen") && strings.Contains(l, "coder"):
+			return 0
+		case strings.Contains(l, "deepseek"):
+			return 1
+		case strings.Contains(l, "qwen"):
+			return 2
+		}
+		return 3
+	}
+	sort.SliceStable(ids, func(i, j int) bool {
+		if ri, rj := rank(ids[i]), rank(ids[j]); ri != rj {
+			return ri < rj
+		}
+		return ids[i] < ids[j]
+	})
 	return ids, nil
+}
+
+func isZero(price string) bool {
+	price = strings.TrimSpace(price)
+	return price != "" && strings.Trim(price, "0.") == ""
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

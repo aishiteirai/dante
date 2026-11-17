@@ -177,11 +177,13 @@ func (m model) viewRepo() string {
 // ---- tela 3: escolher o modelo ----
 
 type modelRow struct {
-	header bool
-	prov   config.Provider
-	model  string
-	note   string
-	ok     bool
+	header   bool
+	prov     config.Provider
+	model    string
+	note     string
+	ok       bool
+	download bool   // sugestão ainda não baixada no servidor local
+	size     string // tamanho do download
 }
 
 func (m *model) enterModelScreen() []tea.Cmd {
@@ -213,19 +215,30 @@ func (m *model) buildModelRows() {
 	for _, p := range m.cfg.Provedores {
 		models := append([]string{}, p.Modelos...)
 		h := modelRow{header: true, prov: p}
+		list, listed := m.listed[p.ID]
+		_, failed := m.listErr[p.ID]
+		if p.Listar && listed {
+			models = mergeUnique(models, list)
+		}
+		var downloads []modelRow
 		switch {
-		case p.Listar:
-			if list, ok := m.listed[p.ID]; ok {
-				models = mergeUnique(models, list)
-				h.note, h.ok = fmt.Sprintf("rodando · %s", plural(len(list), "modelo", "modelos")), true
-				if len(list) == 0 {
-					h.note, h.ok = "rodando, mas sem modelos baixados", false
+		case p.Local && listed:
+			for _, sg := range p.Sugeridos {
+				if !hasModel(list, sg.Modelo) {
+					downloads = append(downloads, modelRow{prov: p, model: sg.Modelo, download: true, size: sg.Tamanho, note: sg.Nota})
 				}
-			} else if _, failed := m.listErr[p.ID]; failed {
-				h.note = "não está rodando em " + p.URL
-			} else {
-				h.note = "procurando…"
 			}
+			h.note, h.ok = fmt.Sprintf("rodando · %s", plural(len(list), "modelo baixado", "modelos baixados")), true
+			if len(list) == 0 {
+				h.note = "rodando · escolha um modelo abaixo para baixar"
+			}
+		case p.Local && failed:
+			h.note = "não está rodando em " + p.URL
+			if len(p.Sugeridos) > 0 {
+				h.note = "não está rodando · instale em ollama.com e abra o Ollama"
+			}
+		case p.Local:
+			h.note = "procurando…"
 		default:
 			switch p.KeySource() {
 			case "dante":
@@ -239,11 +252,22 @@ func (m *model) buildModelRows() {
 			default:
 				h.note = "sem chave · c para adicionar"
 			}
+			if p.Listar {
+				switch {
+				case listed && p.Filtro == "gratis":
+					h.note = fmt.Sprintf("%d grátis · %s", len(list), h.note)
+				case failed:
+					h.note = "não consegui listar os modelos · " + h.note
+				case !listed:
+					h.note = "procurando modelos… · " + h.note
+				}
+			}
 		}
 		rows = append(rows, h)
 		for _, md := range models {
 			rows = append(rows, modelRow{prov: p, model: md})
 		}
+		rows = append(rows, downloads...)
 	}
 	m.modelRows = rows
 	for i, r := range rows {
@@ -260,6 +284,16 @@ func (m *model) buildModelRows() {
 		}
 	}
 	m.modelOff = scrollTo(max(m.modelIdx, 0), m.modelOff, m.modelListHeight())
+}
+
+// O Ollama chama "qwen3" de "qwen3:latest".
+func hasModel(list []string, name string) bool {
+	for _, x := range list {
+		if x == name || x == name+":latest" || strings.TrimSuffix(x, ":latest") == name {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeUnique(a, b []string) []string {
@@ -324,6 +358,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		r := m.modelRows[m.modelIdx]
+		if r.download {
+			return m.startPull(r)
+		}
 		if !r.prov.HasKey() { // pede a chave antes de usar o modelo
 			return m.openKeyScreen(r.prov, &r)
 		}
@@ -360,19 +397,30 @@ func (m model) viewModel() string {
 			if i > m.modelOff {
 				b.WriteString("\n")
 			}
-			kind := "API"
-			if r.prov.Local {
-				kind = "local"
-			} else if r.prov.Tipo == llm.KindOpenAI {
-				kind = "API compatível com OpenAI"
+			b.WriteString(truncateW(labelStyle.Render(r.prov.Nome)+subtleStyle.Render(" · ")+note, w) + "\n")
+			continue
+		}
+		name := r.model
+		if r.download {
+			extra := "baixar · " + r.size
+			if r.note != "" {
+				extra += " · " + r.note
 			}
-			b.WriteString(truncateW(labelStyle.Render(r.prov.Nome)+subtleStyle.Render(" · "+kind+" · ")+note, w) + "\n")
+			if m.pulling == r.model {
+				extra = m.spin.View() + " " + m.pullStatus
+			}
+			name = padTo(r.model, 20) + " " + subtleStyle.Render(extra)
+			if i == m.modelIdx {
+				b.WriteString(truncateW(selectedStyle.Render("  ↓ ")+selectedStyle.Render(padTo(r.model, 20))+" "+subtleStyle.Render(extra), w) + "\n")
+			} else {
+				b.WriteString(truncateW("  ↓ "+name, w) + "\n")
+			}
 			continue
 		}
 		if i == m.modelIdx {
-			b.WriteString(selectedStyle.Render("  ▸ "+r.model) + "\n")
+			b.WriteString(truncateW(selectedStyle.Render("  ▸ "+name), w) + "\n")
 		} else {
-			b.WriteString("    " + r.model + "\n")
+			b.WriteString(truncateW("    "+name, w) + "\n")
 		}
 	}
 	if m.status != "" {
@@ -383,6 +431,6 @@ func (m model) viewModel() string {
 		b.WriteString("\n" + st.Render(truncateW(m.status, w)) + "\n")
 	}
 	b.WriteString("\n" + subtleStyle.Render(truncateW("Provedores e modelos: "+prettyPath(config.Path()), w)) + "\n")
-	b.WriteString(helpStyle.Render("↑↓ escolher · enter usar · c chave do provedor · x remover chave · e esforço · esc voltar"))
+	b.WriteString(helpStyle.Render("enter usar/baixar · c chave · x remover chave · e esforço · esc voltar"))
 	return m.center(boxStyle.Width(w + 6).Render(b.String()))
 }
