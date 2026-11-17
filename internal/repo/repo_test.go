@@ -99,3 +99,28 @@ func TestTools(t *testing.T) {
 		t.Fatal("deveria recusar link para fora do repositório")
 	}
 }
+
+func TestReadFiles(t *testing.T) {
+	r := setup(t)
+	os.WriteFile(filepath.Join(r.Root, ".env"), []byte("X=1\n"), 0o644)
+	exec := r.Executor(func() string { return WorkTree })
+	out, bad := exec(context.Background(), llm.ToolCall{Name: "read_files", Args: `{"files":[
+		{"path":"b.py","start_line":2,"end_line":3},
+		{"path":".env"},
+		{"path":"nao-existe.py"},
+		{"path":"../../etc/passwd"}]}`})
+	if bad {
+		t.Fatalf("o lote não deveria falhar inteiro: %s", out)
+	}
+	for _, want := range []string{"=== b.py (linhas 2-3) ===", "2  y = 3", "3  a = 0", "arquivo sensível bloqueado", "arquivo não encontrado", "fora do repositório"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("faltou %q em:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "1  x = 1") || strings.Contains(out, "X=1") {
+		t.Errorf("leu fora do trecho ou o segredo:\n%s", out)
+	}
+	if _, bad := exec(context.Background(), llm.ToolCall{Name: "read_files", Args: `{"files":[]}`}); !bad {
+		t.Error("lote vazio deveria ser erro")
+	}
+}

@@ -295,16 +295,26 @@ func (m *model) showOpenedByModel(call llm.ToolCall, result string) {
 		Ref  string `json:"ref"`
 	}
 	_ = json.Unmarshal([]byte(call.Args), &a)
+	if call.Name == "read_files" { // o lote inteiro aparece no painel, separado por arquivo
+		var b struct {
+			Files []struct {
+				Path string `json:"path"`
+			} `json:"files"`
+		}
+		_ = json.Unmarshal([]byte(call.Args), &b)
+		if len(b.Files) == 0 {
+			return
+		}
+		a.Path = b.Files[0].Path
+		m.selectFile(a.Path)
+		m.previewKey = "modelo"
+		m.setPreview(fmt.Sprintf("Documentos · %s (abertos pelo modelo)", plural(len(b.Files), "arquivo", "arquivos")), result, true)
+		return
+	}
 	if a.Path == "" || (call.Name != "read_file" && call.Name != "git_diff") {
 		return
 	}
-	for i, f := range m.files {
-		if f.Path == a.Path {
-			m.fileIdx = i
-			m.fileOff = scrollTo(i, m.fileOff, m.filesRows())
-			break
-		}
-	}
+	m.selectFile(a.Path)
 	m.previewKey = "modelo"
 	title := "Documento · " + a.Path
 	if a.Ref != "" {
@@ -316,6 +326,16 @@ func (m *model) showOpenedByModel(call llm.ToolCall, result string) {
 		return
 	}
 	m.setPreview(title, result, true)
+}
+
+func (m *model) selectFile(path string) {
+	for i, f := range m.files {
+		if f.Path == path {
+			m.fileIdx = i
+			m.fileOff = scrollTo(i, m.fileOff, m.filesRows())
+			return
+		}
+	}
 }
 
 func shortSHA(s string) string {
@@ -344,6 +364,18 @@ func describeCall(c llm.ToolCall) string {
 	switch c.Name {
 	case "read_file":
 		return "abriu " + loc
+	case "read_files":
+		var b struct {
+			Files []struct {
+				Path string `json:"path"`
+			} `json:"files"`
+		}
+		_ = json.Unmarshal([]byte(c.Args), &b)
+		var names []string
+		for _, f := range b.Files {
+			names = append(names, f.Path)
+		}
+		return fmt.Sprintf("abriu %s: %s", plural(len(names), "arquivo", "arquivos"), strings.Join(names, ", "))
 	case "git_diff":
 		if loc == "" {
 			return "viu o diff do alvo"

@@ -216,3 +216,10 @@ func TestMouseFocoEArrasto(t *testing.T) {
 		t.Fatal("as colunas não somam a largura da tela")
 	}
 }
+
+func TestDescribeReadFiles(t *testing.T) {
+	c := llm.ToolCall{Name: "read_files", Args: `{"files":[{"path":"a.go"},{"path":"b.go","start_line":3}]}`}
+	if got := describeCall(c); got != "abriu 2 arquivos: a.go, b.go" {
+		t.Fatalf("got %q", got)
+	}
+}
