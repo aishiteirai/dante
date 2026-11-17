@@ -315,3 +315,21 @@ func TestContextoPadrao(t *testing.T) {
 		t.Fatal("no Claude o servidor cuida do contexto")
 	}
 }
+
+func TestEditorCommand(t *testing.T) {
+	cases := []struct {
+		editor, goos string
+		want         string
+	}{
+		{"", "linux", "vi +7 f.go"},
+		{"", "windows", "notepad f.go"},
+		{"code --wait", "windows", "code --wait -g f.go:7"},
+		{`C:\Tools\nvim.exe`, "windows", `C:\Tools\nvim.exe +7 f.go`},
+		{"notepad++.exe", "windows", "notepad++.exe f.go"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(editorCommand(c.editor, c.goos, "f.go", 7), " "); got != c.want {
+			t.Errorf("editorCommand(%q, %s) = %q, queria %q", c.editor, c.goos, got, c.want)
+		}
+	}
+}
