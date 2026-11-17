@@ -140,3 +140,18 @@ func TestDiffComContexto(t *testing.T) {
 		t.Fatalf("DiffForModel difere do git_diff:\n%q\n%q", d, padrao)
 	}
 }
+
+func TestSafePathComAsDuasBarras(t *testing.T) {
+	r := Repo{Root: "/repo"}
+	ok := map[string]string{"a/b.go": "a/b.go", `a\b.go`: "a/b.go", "./x/../y.go": "y.go", `x\..\y.go`: "y.go", "/repo/z.go": "z.go"}
+	for in, want := range ok {
+		if got, err := r.safePath(in); err != nil || got != want {
+			t.Errorf("safePath(%q) = %q, %v; queria %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"..", "../x", `..\x`, `a\..\..\x`, `..\..\Windows\win.ini`, "/etc/passwd", `\etc\passwd`, "a/../../x"} {
+		if got, err := r.safePath(in); err == nil {
+			t.Errorf("safePath(%q) deveria recusar, deu %q", in, got)
+		}
+	}
+}
