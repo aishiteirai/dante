@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,8 +18,13 @@ func (m model) View() string {
 	}
 	var body, help string
 	switch m.screen {
+	case scrRepo:
+		body, help = m.viewRepo(), "enter abrir · tab completar caminho · ↑↓ recentes · esc sair"
+		if m.cfg.Repo != "" {
+			help = "enter abrir · tab completar caminho · ↑↓ recentes · esc voltar"
+		}
 	case scrMenu:
-		body, help = m.viewMenu(), "↑↓ navegar · enter escolher · e esforço · q sair"
+		body, help = m.viewMenu(), "↑↓ navegar · enter escolher · e esforço · u atualizar · esc trocar repositório · q sair"
 	case scrBase:
 		body, help = m.viewBase(), "enter revisar · esc voltar"
 	case scrCommits:
@@ -34,7 +40,10 @@ func (m model) View() string {
 }
 
 func (m model) header() string {
-	left := titleStyle.Render("revisor") + subtleStyle.Render(" · "+m.cfg.RepoName)
+	left := titleStyle.Render("dante")
+	if m.cfg.RepoName != "" && m.screen != scrRepo {
+		left += subtleStyle.Render(" · " + m.cfg.RepoName)
+	}
 	right := subtleStyle.Render("esforço ") + boldStyle.Render(m.cfg.Effort)
 	gap := max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right + "\n"
@@ -65,15 +74,94 @@ func (m model) pad(content string) string {
 
 // ---- Menu ----
 
+func (m model) viewRepo() string {
+	var b strings.Builder
+	b.WriteString(boldStyle.Render("Qual repositório você quer revisar?") + "\n")
+	b.WriteString(subtleStyle.Render("Caminho de uma pasta local, ou URL do git (também aceita dono/repo do GitHub, que é clonado).") + "\n\n")
+	if m.opening {
+		b.WriteString(m.spin.View() + " abrindo " + boldStyle.Render(m.repoInput.Value()) + subtleStyle.Render("…") + "\n")
+	} else {
+		b.WriteString(m.repoInput.View() + "\n")
+	}
+	if len(m.completions) > 0 {
+		shown := m.completions
+		if len(shown) > 12 {
+			shown = append(shown[:12:12], "…")
+		}
+		b.WriteString(subtleStyle.Render("  "+strings.Join(shown, "  ")) + "\n")
+	}
+	if len(m.recents) > 0 {
+		b.WriteString("\n" + labelStyle.Render("Recentes") + "\n")
+		for i, r := range m.recents {
+			if i >= max(m.listHeight()-6, 3) {
+				break
+			}
+			cursor, name := "  ", filepath.Base(r)
+			if i == m.recentIdx {
+				cursor, name = selectedStyle.Render("▸ "), selectedStyle.Render(name)
+			}
+			b.WriteString(ansi.Truncate(cursor+padRight(name, 24)+" "+subtleStyle.Render(prettyPath(r)), m.width, "…") + "\n")
+		}
+	}
+	return m.pad(b.String())
+}
+
+// Painel com o estado do repositório aberto.
+func (m model) viewWorkspace() string {
+	w := m.ws
+	var lines []string
+	lines = append(lines, boldStyle.Render(m.cfg.RepoName)+"  "+subtleStyle.Render(prettyPath(m.cfg.Repo)))
+	branch := w.Branch
+	if branch == "" {
+		branch = "…"
+	}
+	bl := subtleStyle.Render("branch ") + selectedStyle.Render(branch)
+	if w.Upstream != "" {
+		bl += subtleStyle.Render(" → " + w.Upstream)
+	}
+	if w.Ahead != "" {
+		bl += subtleStyle.Render(" (" + w.Ahead + ")")
+	}
+	var st []string
+	if w.Staged > 0 {
+		st = append(st, fmt.Sprintf("%d em stage", w.Staged))
+	}
+	if w.Unstaged > 0 {
+		st = append(st, fmt.Sprintf("%d modificado(s)", w.Unstaged))
+	}
+	if w.Untracked > 0 {
+		st = append(st, fmt.Sprintf("%d novo(s)", w.Untracked))
+	}
+	if len(st) == 0 && w.Branch != "" {
+		bl += "   " + okStyle.Render("✓ sem mudanças locais")
+	} else if len(st) > 0 {
+		bl += "   " + sevStyle("media").Render("● "+strings.Join(st, " · "))
+	}
+	lines = append(lines, bl)
+	if w.LastCommit != "" {
+		lines = append(lines, subtleStyle.Render("último commit ")+w.LastCommit)
+	}
+	inner := max(m.width-4, 20)
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, inner, "…")
+	}
+	return panelStyle.Width(m.width - 2).Render(strings.Join(lines, "\n"))
+}
+
 func (m model) viewMenu() string {
 	var b strings.Builder
+	b.WriteString(m.viewWorkspace() + "\n\n")
 	b.WriteString(boldStyle.Render("O que revisar?") + "\n\n")
-	for i, it := range menuItems {
+	for i, it := range m.menuItems() {
 		cursor, title := "  ", it.title
 		if i == m.menuIdx {
 			cursor, title = selectedStyle.Render("▸ "), selectedStyle.Render(title)
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s\n     %s\n", cursor, subtleStyle.Render(itoa(i+1)), title, subtleStyle.Render(it.desc)))
+		if i == menuLen-1 {
+			b.WriteString("\n")
+		}
+		b.WriteString(ansi.Truncate(fmt.Sprintf("%s%s %s", cursor, subtleStyle.Render(itoa(i+1)), title), m.width, "…") + "\n")
+		b.WriteString(ansi.Truncate("     "+subtleStyle.Render(it.desc), m.width, "…") + "\n")
 	}
 	return m.pad(b.String())
 }

@@ -1,4 +1,4 @@
-// revisor-tui: interface de terminal para o harness revisor de código.
+// dante: revisor de código para o terminal.
 //
 // Executa o harness Python (`python -m revisor ... --eventos`) e mostra o progresso
 // e os achados de forma interativa.
@@ -20,25 +20,18 @@ var defaultPython = "python3"
 
 func main() {
 	cfg := Config{}
-	flag.StringVar(&cfg.Repo, "repo", ".", "repositório a revisar")
+	flag.StringVar(&cfg.Repo, "repo", "", "abre direto este repositório (caminho ou URL), sem a tela inicial")
 	flag.StringVar(&cfg.Python, "python", envOr("REVISOR_PYTHON", defaultPython), "interpretador Python com o pacote `revisor` instalado (env REVISOR_PYTHON)")
 	flag.StringVar(&cfg.Effort, "esforco", envOr("REVISOR_ESFORCO", "high"), "esforço inicial: low, medium, high, xhigh, max")
 	flag.StringVar(&cfg.Budget, "orcamento", os.Getenv("REVISOR_ORCAMENTO"), "teto de custo em US$ por revisão")
 	modelo := flag.String("modelo", os.Getenv("REVISOR_MODELO"), "modelo (padrão do harness: claude-opus-5-5)")
 	diretrizes := flag.String("diretrizes", "", "arquivo de diretrizes do time")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Uso: revisor-tui [opções]\n\nInterface de terminal do revisor de código.\n\n")
+		fmt.Fprintf(os.Stderr, "Uso: dante [opções]\n\nRevisor de código para o terminal. Ao abrir, pergunta qual repositório revisar.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	root, err := repoRoot(cfg.Repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Erro:", err)
-		os.Exit(2)
-	}
-	cfg.Repo = root
-	cfg.RepoName = filepath.Base(root)
 	if *modelo != "" {
 		cfg.Extra = append(cfg.Extra, "--modelo", *modelo)
 	}

@@ -2,11 +2,17 @@
 
 Revisor de código para o terminal, construído sobre o **Claude Agent SDK**.
 
-- **`revisor-tui`** (Go, Bubble Tea): interface interativa. Você escolhe o que revisar,
-  acompanha o agente trabalhando e navega pelos achados.
-- **`revisor`** (Python): o harness. O agente lê o diff e explora o repositório (abre
-  arquivos, faz buscas, roda `git log`/`git blame`) para confirmar cada suspeita. Os achados
-  saem em JSON estruturado. Também funciona sozinho, em scripts e hooks.
+```bash
+dante
+```
+
+Ao abrir, o dante pergunta qual repositório revisar. Você digita o caminho de uma pasta ou
+uma URL do git, e ele monta a área de trabalho com branch, mudanças locais e último commit.
+Nela você escolhe o que revisar, acompanha o agente trabalhando e navega pelos achados.
+
+Por baixo, o harness Python (`revisor`) roda o agente. Ele lê o diff e explora o
+repositório (abre arquivos, faz buscas, roda `git log`/`git blame`) para confirmar cada
+suspeita antes de reportar. O `revisor` também funciona sozinho, em scripts e hooks.
 
 ## Instalação
 
@@ -19,8 +25,8 @@ make install
 ```
 
 O `make install` cria um ambiente virtual em `.venv/`, sem mexer no Python do sistema.
-Em seguida, coloca `revisor` e `revisor-tui` em `~/.local/bin`. Esse diretório precisa
-estar no `PATH`; o comando avisa se não estiver. O `revisor-tui` já sai configurado para
+Em seguida, coloca `dante` e `revisor` em `~/.local/bin`. Esse diretório precisa
+estar no `PATH`; o comando avisa se não estiver. O `dante` já sai configurado para
 usar o Python do `.venv`, então não mova nem apague a pasta do projeto depois de instalar.
 
 Se der erro ao criar o `.venv`:
@@ -29,26 +35,36 @@ Se der erro ao criar o `.venv`:
 
 Outros alvos: `make test` roda os testes, e `make clean` remove o `.venv` e o binário.
 
-## Interface de terminal
+## Usando o dante
 
 ```bash
-cd meu-projeto
-revisor-tui
+dante                      # pergunta o repositório
+dante --repo ~/projetos/x  # abre direto
 ```
+
+**Tela inicial.** Aceita:
+- uma pasta local: `~/projetos/app` (`tab` completa o caminho);
+- uma URL do git: `https://…`, `git@…`;
+- o atalho do GitHub `dono/repo`.
+
+URLs são clonadas em `~/.local/share/dante/repos/` e atualizadas com `git pull` quando você
+abre de novo. Os repositórios abertos antes aparecem em **Recentes**; use `↑↓` para
+escolher.
+
+**Área de trabalho.** Mostra a branch, as mudanças locais e o último commit, e o menu de
+revisão:
 
 | Tela | Teclas |
 |---|---|
-| Menu | `1`–`5` ou `↑↓`+`enter` · `e` muda o esforço · `q` sai |
+| Área de trabalho | `1`–`6` ou `↑↓`+`enter` · `e` muda o esforço · `u` atualiza · `esc` troca de repositório · `q` sai |
 | Commits do histórico | `espaço` marca · `a` marca os não revisados até o cursor · `c` limpa · `v` abre a revisão anterior do commit · `enter` revisa |
 | Revisão em andamento | progresso ao vivo (ferramentas usadas, custo) · `esc` cancela |
 | Resultados | `↑↓` achado · `tab`/`←→` próxima revisão · `f` filtra por severidade · `o`/`enter` abre o arquivo na linha (`$VISUAL`/`$EDITOR`) · `pgup/pgdn` rola o detalhe |
 | Histórico | `enter` abre · `r` revisa o commit de novo |
 
-Na lista de commits, os já revisados aparecem com a contagem de achados (●).
-
 Opções: `--repo`, `--esforco`, `--orcamento`, `--modelo`, `--diretrizes`, `--python`.
-Variáveis de ambiente: `REVISOR_PYTHON`, `REVISOR_ESFORCO`, `REVISOR_ORCAMENTO`,
-`REVISOR_MODELO`.
+Variáveis de ambiente: `DANTE_HOME`, `REVISOR_PYTHON`, `REVISOR_ESFORCO`,
+`REVISOR_ORCAMENTO`, `REVISOR_MODELO`.
 
 ## CLI (sem interface)
 
@@ -69,7 +85,7 @@ revisor historico --caminho              # onde o histórico deste repo fica
 | `--orcamento 2.0` | Teto de custo em US$ por revisão |
 | `--falhar-em alta` | Sai com código 1 se houver achado `alta` ou pior |
 | `--json` / `--saida rel.md` | Saída em JSON / relatório markdown em arquivo |
-| `--eventos` | Eventos JSONL no stdout (protocolo usado pela interface Go) |
+| `--eventos` | Eventos JSONL no stdout (protocolo usado pelo dante) |
 | `--diretrizes ARQ` | Diretrizes do time (padrão: `.revisor/diretrizes.md`, `REVIEW.md`) |
 
 Códigos de saída: `0` ok · `1` achado na severidade de `--falhar-em` · `2` erro.
@@ -86,23 +102,26 @@ revisor revisar --base origin/main --falhar-em alta --esforco medium
 O histórico fica **fora do repositório**:
 
 ```
-~/.local/share/revisor/historico/<repo>-<sha do primeiro commit>/<data>-<sha>.json
+~/.local/share/dante/
+  historico/<repo>-<sha do primeiro commit>/<data>-<sha>.json
+  repos/        clones feitos a partir de URLs
+  recentes.json repositórios abertos recentemente
 ```
 
-O diretório base segue `$REVISOR_HOME` ou `$XDG_DATA_HOME/revisor`. O identificador usa o
+O diretório base segue `$DANTE_HOME` ou `$XDG_DATA_HOME/dante`. O identificador usa o
 primeiro commit do repositório, então clones diferentes do mesmo projeto compartilham o
 histórico.
 
 ## Arquitetura
 
 ```
-cmd/revisor-tui/  interface Go: executa `python -m revisor revisar --eventos` e lê o JSONL
+cmd/dante/      aplicativo Go: executa `python -m revisor revisar --eventos` e lê o JSONL
 revisor/
   git_utils.py  alvos: working tree, stage, branch, commits
   prompts.py    system prompt (bug > segurança > qualidade > padrões) + prompt do alvo
   agent.py      query() do Agent SDK com ferramentas só de leitura e saída via JSON Schema
   schema.py     formato dos achados
-  history.py    histórico em ~/.local/share/revisor
+  history.py    histórico em ~/.local/share/dante
   report.py     markdown / JSON
   cli.py        comandos `revisar` e `historico`
 ```

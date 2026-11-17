@@ -1,7 +1,7 @@
 """Histórico de revisões, guardado fora do repositório revisado.
 
-Local: $REVISOR_HOME/historico/<repo>-<id>/  (padrão: $XDG_DATA_HOME/revisor ou
-~/.local/share/revisor). O <id> é o SHA do primeiro commit do repo, que é o mesmo em
+Local: $DANTE_HOME/historico/<repo>-<id>/  (padrão: $XDG_DATA_HOME/dante ou
+~/.local/share/dante; $REVISOR_HOME também é aceito). O <id> é o SHA do primeiro commit do repo, que é o mesmo em
 qualquer clone; repositórios sem commits usam um hash do caminho.
 """
 
@@ -19,10 +19,11 @@ from .git_utils import GitError, git
 
 
 def data_home() -> Path:
-    if os.environ.get("REVISOR_HOME"):
-        return Path(os.environ["REVISOR_HOME"]).expanduser()
+    for var in ("DANTE_HOME", "REVISOR_HOME"):
+        if os.environ.get(var):
+            return Path(os.environ[var]).expanduser()
     xdg = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(xdg) / "revisor"
+    return Path(xdg) / "dante"
 
 
 def repo_id(root: Path) -> str:

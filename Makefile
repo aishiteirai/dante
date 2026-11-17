@@ -5,11 +5,11 @@ PYTHON ?= python3
 VENV   ?= $(CURDIR)/.venv
 VPY     = $(VENV)/bin/python
 
-.PHONY: install venv install-python install-tui build test clean
+.PHONY: install venv install-python install-app build test clean
 
-install: install-python install-tui
+install: install-python install-app
 	@echo
-	@echo "Pronto. Comandos instalados em $(PREFIX)/bin: revisor, revisor-tui"
+	@echo "Pronto. Abra com:  dante"
 	@case ":$$PATH:" in *":$(PREFIX)/bin:"*) ;; *) \
 	  echo "Atenção: $(PREFIX)/bin não está no PATH. Adicione ao seu shell:"; \
 	  echo '  export PATH="$(PREFIX)/bin:$$PATH"';; esac
@@ -31,15 +31,16 @@ install-python: $(VPY)
 
 # O binário já sai apontando para o Python do .venv (pode trocar com --python ou REVISOR_PYTHON).
 build:
-	go build -ldflags "-X main.defaultPython=$(VPY)" -o revisor-tui ./cmd/revisor-tui
+	go build -ldflags "-X main.defaultPython=$(VPY)" -o dante ./cmd/dante
 
-install-tui: build
+install-app: build
 	install -d $(PREFIX)/bin
-	install -m 0755 revisor-tui $(PREFIX)/bin/revisor-tui
+	install -m 0755 dante $(PREFIX)/bin/dante
+	rm -f $(PREFIX)/bin/revisor-tui
 
 test: $(VPY)
 	$(VPY) -m pytest -q
 	go vet ./... && go test ./...
 
 clean:
-	rm -rf revisor-tui $(VENV)
+	rm -rf dante revisor-tui $(VENV)

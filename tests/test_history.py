@@ -17,7 +17,7 @@ def test_historico_fora_do_repo(tmp_path: Path, monkeypatch):
     subprocess.run(["git", "commit", "-qm", "c"], cwd=repo, check=True)
 
     home = tmp_path / "dados"
-    monkeypatch.setenv("REVISOR_HOME", str(home))
+    monkeypatch.setenv("DANTE_HOME", str(home))
     t = commit_target("HEAD", repo).load(repo)
     achado = {"severidade": "alta", "arquivo": "a.py", "linha": 1}
     path, rec = history.save(ReviewResult(t, "ok", [achado]), repo)
