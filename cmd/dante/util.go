@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,28 +13,38 @@ import (
 
 type editorDoneMsg struct{ err error }
 
-// Abre o arquivo na linha indicada no $VISUAL/$EDITOR (vi como padrão).
+// Abre o arquivo na linha indicada no $VISUAL/$EDITOR (vi no Linux e no macOS, Bloco de
+// Notas no Windows).
 func openInEditor(root, path string, line int) tea.Cmd {
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
 		editor = os.Getenv("EDITOR")
 	}
-	if editor == "" {
-		editor = "vi"
-	}
-	parts := strings.Fields(editor)
-	file := filepath.Join(root, path)
-	ln := fmt.Sprint(max(line, 1))
-	switch filepath.Base(parts[0]) {
-	case "code", "cursor", "codium":
-		parts = append(parts, "-g", file+":"+ln)
-	case "zed", "subl", "hx", "helix":
-		parts = append(parts, file+":"+ln)
-	default: // vim, nvim, nano, micro, emacs...
-		parts = append(parts, "+"+ln, file)
-	}
+	parts := editorCommand(editor, runtime.GOOS, filepath.Join(root, filepath.FromSlash(path)), line)
 	c := exec.Command(parts[0], parts[1:]...)
 	return tea.ExecProcess(c, func(err error) tea.Msg { return editorDoneMsg{err} })
+}
+
+// editorCommand monta a linha de comando que abre `file` na linha `line`.
+func editorCommand(editor, goos, file string, line int) []string {
+	if editor == "" {
+		editor = "vi"
+		if goos == "windows" {
+			editor = "notepad"
+		}
+	}
+	parts := strings.Fields(editor)
+	ln := fmt.Sprint(max(line, 1))
+	name := strings.TrimSuffix(strings.ToLower(filepath.Base(parts[0])), ".exe")
+	switch name {
+	case "code", "cursor", "codium":
+		return append(parts, "-g", file+":"+ln)
+	case "zed", "subl", "hx", "helix":
+		return append(parts, file+":"+ln)
+	case "notepad", "notepad++", "write":
+		return append(parts, file) // não aceitam a linha na linha de comando
+	}
+	return append(parts, "+"+ln, file) // vim, nvim, nano, micro, emacs...
 }
 
 func lastLines(text, fallback string) string {

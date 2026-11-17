@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -251,21 +252,25 @@ func checkArg(s string) error {
 	return nil
 }
 
-// safePath garante que o caminho fica dentro do repositório.
+// safePath garante que o caminho fica dentro do repositório. Trata "/" e "\" como
+// separadores em qualquer sistema (no Windows, filepath.Clean usa "\") e devolve o
+// caminho no formato do git, com "/", que também funciona nas funções de arquivo do Windows.
 func (r Repo) safePath(p string) (string, error) {
 	if err := checkArg(p); err != nil {
 		return "", err
 	}
-	clean := filepath.Clean(strings.TrimPrefix(p, "./"))
-	if filepath.IsAbs(clean) {
-		rel, err := filepath.Rel(r.Root, clean)
+	outside := fmt.Errorf("caminho fora do repositório: %s", p)
+	native := filepath.FromSlash(p)
+	if filepath.IsAbs(native) || filepath.VolumeName(native) != "" || strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`) {
+		rel, err := filepath.Rel(r.Root, filepath.Clean(native))
 		if err != nil {
-			return "", fmt.Errorf("caminho fora do repositório: %s", p)
+			return "", outside
 		}
-		clean = rel
+		p = rel
 	}
-	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("caminho fora do repositório: %s", p)
+	clean := path.Clean(strings.ReplaceAll(p, `\`, "/"))
+	if clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return "", outside
 	}
 	return clean, nil
 }
