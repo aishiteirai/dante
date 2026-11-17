@@ -15,10 +15,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Python padrão; o Makefile troca pelo do .venv com -ldflags "-X main.defaultPython=...".
+var defaultPython = "python3"
+
 func main() {
 	cfg := Config{}
 	flag.StringVar(&cfg.Repo, "repo", ".", "repositório a revisar")
-	flag.StringVar(&cfg.Python, "python", envOr("REVISOR_PYTHON", "python3"), "interpretador Python com o pacote `revisor` instalado (env REVISOR_PYTHON)")
+	flag.StringVar(&cfg.Python, "python", envOr("REVISOR_PYTHON", defaultPython), "interpretador Python com o pacote `revisor` instalado (env REVISOR_PYTHON)")
 	flag.StringVar(&cfg.Effort, "esforco", envOr("REVISOR_ESFORCO", "high"), "esforço inicial: low, medium, high, xhigh, max")
 	flag.StringVar(&cfg.Budget, "orcamento", os.Getenv("REVISOR_ORCAMENTO"), "teto de custo em US$ por revisão")
 	modelo := flag.String("modelo", os.Getenv("REVISOR_MODELO"), "modelo (padrão do harness: claude-opus-5-5)")
@@ -46,7 +49,7 @@ func main() {
 
 	if err := exec.Command(cfg.Python, "-c", "import revisor").Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Erro: o pacote `revisor` não foi encontrado em %q.\n"+
-			"Instale com `pip install -e .` na raiz do projeto, ou use --python / REVISOR_PYTHON.\n", cfg.Python)
+			"Rode `make install` na raiz do projeto, ou aponte --python / REVISOR_PYTHON para o Python do .venv.\n", cfg.Python)
 		os.Exit(2)
 	}
 

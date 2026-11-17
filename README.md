@@ -10,20 +10,24 @@ Revisor de código para o terminal, construído sobre o **Claude Agent SDK**.
 
 ## Instalação
 
-Requisitos: Python ≥ 3.10, Go ≥ 1.24, git e credenciais do Claude Code
-(`ANTHROPIC_API_KEY` ou login do `claude`).
+Requisitos: Python ≥ 3.10 com o módulo `venv`, Go ≥ 1.24, git e credenciais do Claude
+Code (`ANTHROPIC_API_KEY` ou login do `claude`).
 
 ```bash
 git clone https://github.com/aishiteirai/dante.git && cd dante
-make install        # pip install -e . e copia revisor-tui para ~/.local/bin
-make test
+make install
 ```
 
-Ou, só a interface Go, direto do GitHub (o pacote Python continua necessário):
+O `make install` cria um ambiente virtual em `.venv/`, sem mexer no Python do sistema.
+Em seguida, coloca `revisor` e `revisor-tui` em `~/.local/bin`. Esse diretório precisa
+estar no `PATH`; o comando avisa se não estiver. O `revisor-tui` já sai configurado para
+usar o Python do `.venv`, então não mova nem apague a pasta do projeto depois de instalar.
 
-```bash
-go install github.com/aishiteirai/dante/cmd/revisor-tui@latest
-```
+Se der erro ao criar o `.venv`:
+- Debian/Ubuntu: `sudo apt install python3-venv`.
+- Sem root, com o [uv](https://docs.astral.sh/uv/): `uv venv --seed .venv && make install`.
+
+Outros alvos: `make test` roda os testes, e `make clean` remove o `.venv` e o binário.
 
 ## Interface de terminal
 
