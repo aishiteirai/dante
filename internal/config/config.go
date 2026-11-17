@@ -100,8 +100,25 @@ type Config struct {
 	// e exceções a eles. Padrões glob, comparados com o nome ou, se tiverem "/", com o caminho.
 	ArquivosBloqueados []string `json:"arquivos_bloqueados,omitempty"`
 	ArquivosLiberados  []string `json:"arquivos_liberados,omitempty"`
+	// Orçamento de tokens (entrada + saída de todas as rodadas) de cada pergunta ao modelo.
+	// 0 usa o padrão (DefaultTurnBudget); -1 desliga o limite.
+	OrcamentoTokens int `json:"orcamento_tokens,omitempty"`
 	// Provedores padrão que este config já conhece; os novos são acrescentados ao carregar.
 	PadroesConhecidos []string `json:"padroes_conhecidos,omitempty"`
+}
+
+// DefaultTurnBudget cobre com folga a revisão de um commit grande lendo em lote.
+const DefaultTurnBudget = 150000
+
+// TurnBudget devolve o orçamento por pergunta (0 = sem limite).
+func (c Config) TurnBudget() int {
+	switch {
+	case c.OrcamentoTokens < 0:
+		return 0
+	case c.OrcamentoTokens == 0:
+		return DefaultTurnBudget
+	}
+	return c.OrcamentoTokens
 }
 
 func Defaults() Config {

@@ -14,6 +14,12 @@ import (
 const (
 	maxFileLines  = 1500
 	maxOutputSize = 60_000
+	maxBatchFiles = 20
+
+	// DiffContextLines é o contexto padrão dos diffs enviados ao modelo: o bastante para
+	// entender a mudança sem abrir o arquivo inteiro.
+	DiffContextLines = 10
+	maxDiffContext   = 40
 )
 
 // Tools devolve as ferramentas de leitura oferecidas ao modelo.
@@ -35,10 +41,26 @@ func Tools() []llm.Tool {
 				"start_line": integer("Opcional: primeira linha (1 = início)."),
 				"end_line":   integer("Opcional: última linha."),
 			}, "path")},
-		{Name: "git_diff", Description: "Diff do alvo em revisão (commit ou mudanças locais). Use `path` para um arquivo só.",
+		{Name: "read_files", Description: "Abre vários arquivos (ou trechos deles) numa chamada só. Prefira esta " +
+			"ferramenta a várias chamadas de read_file: cada rodada reenvia a conversa inteira ao modelo.",
 			Params: obj(map[string]any{
-				"ref":  str("Opcional: SHA do commit; vazio = alvo atual da conversa."),
-				"path": str("Opcional: arquivo."),
+				"files": map[string]any{
+					"type":        "array",
+					"description": fmt.Sprintf("Até %d arquivos. Para arquivos grandes, peça só o trecho necessário.", maxBatchFiles),
+					"items": obj(map[string]any{
+						"path":       str("Caminho relativo à raiz do repositório."),
+						"ref":        str("Opcional: commit cuja versão deve ser lida."),
+						"start_line": integer("Opcional: primeira linha."),
+						"end_line":   integer("Opcional: última linha."),
+					}, "path"),
+				},
+			}, "files")},
+		{Name: "git_diff", Description: "Diff do alvo em revisão (commit ou mudanças locais), com linhas de contexto " +
+			"ao redor de cada mudança. Use `path` para um arquivo só.",
+			Params: obj(map[string]any{
+				"ref":           str("Opcional: SHA do commit; vazio = alvo atual da conversa."),
+				"path":          str("Opcional: arquivo."),
+				"context_lines": integer(fmt.Sprintf("Opcional: linhas de contexto (padrão %d, máximo %d).", DiffContextLines, maxDiffContext)),
 			})},
 		{Name: "grep", Description: "Busca um padrão (regex estendida do git grep) nos arquivos versionados. Devolve arquivo:linha:texto.",
 			Params: obj(map[string]any{
@@ -61,13 +83,22 @@ func Tools() []llm.Tool {
 	}
 }
 
-type toolArgs struct {
+type fileArg struct {
 	Path      string `json:"path"`
 	Ref       string `json:"ref"`
-	Pattern   string `json:"pattern"`
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
-	Limit     int    `json:"limit"`
+}
+
+type toolArgs struct {
+	Files     []fileArg `json:"files"`
+	Path      string    `json:"path"`
+	Ref       string    `json:"ref"`
+	Pattern   string    `json:"pattern"`
+	StartLine int       `json:"start_line"`
+	EndLine   int       `json:"end_line"`
+	Limit     int       `json:"limit"`
+	Context   int       `json:"context_lines"`
 }
 
 // Executor devolve o executor das ferramentas; `target` é o SHA em revisão (WorkTree = mudanças locais).
@@ -95,12 +126,18 @@ func (r Repo) Executor(target func() string) llm.Executor {
 		switch call.Name {
 		case "read_file":
 			out, err = r.readFile(a)
+		case "read_files":
+			out, err = r.readFiles(a.Files)
 		case "git_diff":
 			ref := a.Ref
 			if ref == "" {
 				ref = target()
 			}
-			out, err = r.Diff(ref, a.Path)
+			n := a.Context
+			if n <= 0 {
+				n = DiffContextLines
+			}
+			out, err = r.DiffContext(ref, a.Path, min(n, maxDiffContext))
 			out = r.filterDiff(out)
 			if err == nil && strings.TrimSpace(out) == "" {
 				out = "(sem diferenças)"
@@ -162,6 +199,49 @@ func (r Repo) markBlocked(list string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// readFiles lê vários arquivos; o erro de um arquivo não impede os outros.
+func (r Repo) readFiles(files []fileArg) (string, error) {
+	if len(files) == 0 {
+		return "", fmt.Errorf("`files` precisa de pelo menos um arquivo")
+	}
+	if len(files) > maxBatchFiles {
+		return "", fmt.Errorf("no máximo %d arquivos por chamada (vieram %d)", maxBatchFiles, len(files))
+	}
+	var b strings.Builder
+	for _, f := range files {
+		header := f.Path
+		if f.StartLine > 0 || f.EndLine > 0 {
+			header += fmt.Sprintf(" (linhas %d-%d)", max(f.StartLine, 1), f.EndLine)
+		}
+		if f.Ref != "" {
+			header += " @ " + f.Ref
+		}
+		fmt.Fprintf(&b, "=== %s ===\n", header)
+		content, err := r.readOne(f)
+		if err != nil {
+			fmt.Fprintf(&b, "ERRO: %s\n\n", err)
+			continue
+		}
+		b.WriteString(strings.TrimRight(content, "\n") + "\n\n")
+	}
+	return b.String(), nil
+}
+
+// readOne aplica a um arquivo do lote as mesmas regras de read_file.
+func (r Repo) readOne(f fileArg) (string, error) {
+	if err := checkArg(f.Ref); err != nil {
+		return "", err
+	}
+	clean, err := r.safePath(f.Path)
+	if err != nil {
+		return "", err
+	}
+	if r.Blocked(clean) {
+		return "", blockedErr(clean)
+	}
+	return r.readFile(toolArgs{Path: clean, Ref: f.Ref, StartLine: f.StartLine, EndLine: f.EndLine})
 }
 
 func checkArg(s string) error {

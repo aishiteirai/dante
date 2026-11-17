@@ -25,6 +25,7 @@ const (
 	eTool
 	eNotice
 	eError
+	eUsage // gasto de tokens de uma resposta
 )
 
 type entry struct {
@@ -42,12 +43,15 @@ var guidelineFiles = []string{".dante/diretrizes.md", ".revisor/diretrizes.md", 
 const systemPrompt = `Você é o dante, um revisor de código sênior que trabalha no terminal do desenvolvedor, no repositório %q.
 O desenvolvedor navega pelos commits e pelos arquivos alterados e conversa com você sobre as mudanças. Cada mensagem dele
 começa com um bloco <contexto> que diz o alvo em revisão (um commit ou as mudanças locais ainda não commitadas) e o
-arquivo em foco.
+arquivo em foco. Quando cabe, vem também um bloco <diff> com as mudanças e 10 linhas de contexto ao redor de cada uma.
 
-Como trabalhar:
-- Antes de opinar sobre um arquivo, abra-o com read_file e veja o que mudou com git_diff. Não opine sobre código que não leu.
-- Siga as pistas: leia quem chama o código alterado, os tipos e os testes relacionados (grep, read_file). Use git_log e
-  git_blame quando a intenção original ajudar a decidir.
+Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então leia com economia:
+- Comece pelo <diff>. Ele já mostra o que mudou; não peça git_diff de novo para o mesmo alvo. Sem <diff> na mensagem,
+  peça git_diff por arquivo, começando pelos que têm mais lógica.
+- Abra arquivos só para o que o diff não mostra: quem chama o código alterado, tipos, testes relacionados. Peça só os
+  trechos necessários (start_line/end_line) e junte tudo numa chamada de read_files, ou faça várias chamadas de
+  ferramenta na mesma resposta. Não abra de novo um arquivo que já leu nesta conversa.
+- Não opine sobre código que não viu, no diff ou num arquivo. Use git_log e git_blame quando a intenção original ajudar.
 - Num commit, read_file com ref=<sha> mostra o arquivo como estava naquele commit; sem ref, mostra o que está no disco hoje.
 - Ancore cada observação em arquivo:linha. Para bugs e falhas de segurança, descreva uma entrada ou situação concreta que
   leva ao erro; se não conseguir, diga que é uma suspeita.
@@ -91,6 +95,7 @@ func (m *model) resetChat() {
 	}
 	m.chat = nil
 	m.entries = nil
+	m.diffSent, m.diffPending = "", ""
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -116,7 +121,8 @@ func (m *model) ensureChat() error {
 		Exec:   m.repo.Executor(func() string { return *sendTo }),
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
-		ContextTokens: m.prov.Contexto,
+		ContextTokens: m.effectiveContext(),
+		TurnBudget:    m.cfg.TurnBudget(),
 	})
 	if err != nil {
 		return err
@@ -168,16 +174,66 @@ func indent(s, pre string) string {
 
 // Atalho `r`: pede uma revisão do alvo inteiro ou de um arquivo.
 func (m model) quickReview(path string) (tea.Model, tea.Cmd) {
-	text := "Revise as mudanças deste alvo. Abra os arquivos alterados e diga o que está bom e o que precisa mudar."
+	text := "Revise as mudanças deste alvo: diga o que está bom e o que precisa mudar."
 	if path != "" {
-		text = fmt.Sprintf("Revise as mudanças em `%s`: abra o arquivo, veja o diff e opine.", path)
+		text = fmt.Sprintf("Revise as mudanças em `%s`.", path)
 	}
 	fm, cmd := m.focusPane(pChat)
-	nm, send := fm.(model).send(text)
+	nm, send := fm.(model).sendScoped(text, path)
 	return nm, tea.Batch(cmd, send)
 }
 
-func (m model) send(text string) (tea.Model, tea.Cmd) {
+// Diffs maiores que isto não vão na mensagem; o modelo pede por arquivo.
+const maxInlineDiff = 60_000
+
+// Contexto assumido para provedores sem "contexto" no config.json (ex.: um provedor
+// compatível com OpenAI que o usuário acrescentou). Conservador: a maioria dos modelos
+// atuais tem pelo menos isso.
+const defaultContextTokens = 64000
+
+// effectiveContext é o contexto do modelo em tokens. No Claude, 0: o servidor cuida dos
+// limites (limpeza de contexto) e a janela é de 1 milhão.
+func (m model) effectiveContext() int {
+	switch {
+	case m.prov.Contexto > 0:
+		return m.prov.Contexto
+	case m.prov.Tipo == llm.KindAnthropic:
+		return 0
+	}
+	return defaultContextTokens
+}
+
+// diffBlock devolve o diff do alvo (ou de um arquivo dele) para ir na mensagem, uma vez por
+// conversa para cada alvo/arquivo. Diffs grandes viram só um aviso.
+func (m *model) diffBlock(scope string) string {
+	key := m.target + "\x00" + scope
+	if key == m.diffSent || (scope != "" && m.diffSent == m.target+"\x00") {
+		return "" // já enviado nesta conversa (o do alvo inteiro cobre os arquivos)
+	}
+	limit := maxInlineDiff
+	if c := m.effectiveContext(); c > 0 {
+		limit = min(limit, c*3/4) // até ~1/4 do contexto (3 bytes por token)
+	}
+	d, err := m.repo.DiffForModel(m.target, scope, repo.DiffContextLines)
+	if err != nil || strings.TrimSpace(d) == "" {
+		return ""
+	}
+	what := "do alvo"
+	if scope != "" {
+		what = "de " + scope
+	}
+	if len(d) > limit {
+		return fmt.Sprintf("<diff>O diff %s tem %d KB, grande demais para vir aqui: peça git_diff por arquivo.</diff>\n\n",
+			what, len(d)/1024)
+	}
+	m.diffPending = key // vira diffSent quando a resposta terminar sem erro
+	return "<diff " + what + ">\n" + strings.TrimRight(d, "\n") + "\n</diff>\n\n"
+}
+
+func (m model) send(text string) (tea.Model, tea.Cmd) { return m.sendScoped(text, "") }
+
+// sendScoped envia a mensagem; scope é o arquivo cujo diff acompanha a mensagem ("" = alvo inteiro).
+func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return m, nil
@@ -191,7 +247,8 @@ func (m model) send(text string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	*m.sendTo = m.target
-	prompt := m.contextBlock() + text
+	m.diffPending = ""
+	prompt := m.contextBlock() + m.diffBlock(scope) + text
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""
@@ -295,16 +352,26 @@ func (m *model) showOpenedByModel(call llm.ToolCall, result string) {
 		Ref  string `json:"ref"`
 	}
 	_ = json.Unmarshal([]byte(call.Args), &a)
+	if call.Name == "read_files" { // o lote inteiro aparece no painel, separado por arquivo
+		var b struct {
+			Files []struct {
+				Path string `json:"path"`
+			} `json:"files"`
+		}
+		_ = json.Unmarshal([]byte(call.Args), &b)
+		if len(b.Files) == 0 {
+			return
+		}
+		a.Path = b.Files[0].Path
+		m.selectFile(a.Path)
+		m.previewKey = "modelo"
+		m.setPreview(fmt.Sprintf("Documentos · %s (abertos pelo modelo)", plural(len(b.Files), "arquivo", "arquivos")), result, true)
+		return
+	}
 	if a.Path == "" || (call.Name != "read_file" && call.Name != "git_diff") {
 		return
 	}
-	for i, f := range m.files {
-		if f.Path == a.Path {
-			m.fileIdx = i
-			m.fileOff = scrollTo(i, m.fileOff, m.filesRows())
-			break
-		}
-	}
+	m.selectFile(a.Path)
 	m.previewKey = "modelo"
 	title := "Documento · " + a.Path
 	if a.Ref != "" {
@@ -316,6 +383,27 @@ func (m *model) showOpenedByModel(call llm.ToolCall, result string) {
 		return
 	}
 	m.setPreview(title, result, true)
+}
+
+func (m *model) selectFile(path string) {
+	for i, f := range m.files {
+		if f.Path == path {
+			m.fileIdx = i
+			m.fileOff = scrollTo(i, m.fileOff, m.filesRows())
+			return
+		}
+	}
+}
+
+// humanTokens: 950 → "950", 58200 → "58,2 mil", 1250000 → "1,25 mi".
+func humanTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return strings.Replace(fmt.Sprintf("%.2f mi", float64(n)/1e6), ".", ",", 1)
+	case n >= 1000:
+		return strings.Replace(fmt.Sprintf("%.1f mil", float64(n)/1e3), ".", ",", 1)
+	}
+	return fmt.Sprint(n)
 }
 
 func shortSHA(s string) string {
@@ -344,6 +432,18 @@ func describeCall(c llm.ToolCall) string {
 	switch c.Name {
 	case "read_file":
 		return "abriu " + loc
+	case "read_files":
+		var b struct {
+			Files []struct {
+				Path string `json:"path"`
+			} `json:"files"`
+		}
+		_ = json.Unmarshal([]byte(c.Args), &b)
+		var names []string
+		for _, f := range b.Files {
+			names = append(names, f.Path)
+		}
+		return fmt.Sprintf("abriu %s: %s", plural(len(names), "arquivo", "arquivos"), strings.Join(names, ", "))
 	case "git_diff":
 		if loc == "" {
 			return "viu o diff do alvo"
@@ -379,9 +479,16 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 			m.entries[i].done = true
 		}
 	}
+	if t := msg.usage.InputTokens + msg.usage.OutputTokens; t > 0 {
+		m.entries = append(m.entries, entry{kind: eUsage, text: fmt.Sprintf("%s tokens nesta resposta (entrada %s · saída %s)",
+			humanTokens(t), humanTokens(msg.usage.InputTokens), humanTokens(msg.usage.OutputTokens))})
+	}
 	switch {
 	case msg.err == nil:
 		m.status = ""
+		if m.diffPending != "" {
+			m.diffSent = m.diffPending
+		}
 	case msg.err == context.Canceled:
 		m.entries = append(m.entries, entry{kind: eNotice, text: "resposta cancelada"})
 		m.status = ""
@@ -491,6 +598,8 @@ func (m *model) refreshChat() {
 			parts = append(parts, "  "+warnStyle.Render("• "+e.text))
 		case eError:
 			parts = append(parts, "  "+errStyle.Render(lipgloss.NewStyle().Width(w-2).Render("⚠ "+e.text)))
+		case eUsage:
+			parts = append(parts, "  "+subtleStyle.Render(truncateW("↳ "+e.text, w-2)))
 		}
 	}
 	if m.streaming && (last < 0 || m.entries[last].kind != eAssistant || m.thinking) {

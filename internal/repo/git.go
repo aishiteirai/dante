@@ -195,7 +195,10 @@ func (r Repo) countLines(path string) int {
 }
 
 // Diff de um arquivo no alvo (commit ou mudanças locais). path vazio = alvo inteiro.
-func (r Repo) Diff(sha, path string) (string, error) {
+func (r Repo) Diff(sha, path string) (string, error) { return r.DiffContext(sha, path, 3) }
+
+// DiffContext é o Diff com `lines` linhas de contexto ao redor de cada mudança.
+func (r Repo) DiffContext(sha, path string, lines int) (string, error) {
 	if sha == WorkTree && path != "" {
 		if tracked, _ := r.git("ls-files", "--error-unmatch", "--", path); strings.TrimSpace(tracked) == "" {
 			// Não rastreado: mostra o arquivo inteiro como adição.
@@ -203,7 +206,7 @@ func (r Repo) Diff(sha, path string) (string, error) {
 			return out, nil
 		}
 	}
-	args := r.diffArgs(sha)
+	args := r.diffArgs(sha, fmt.Sprintf("-U%d", lines))
 	if path != "" {
 		args = append(args, "--", path)
 	}

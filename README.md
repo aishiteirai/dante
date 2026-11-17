@@ -200,15 +200,36 @@ arquivo no seu editor.
   `password = "..."`. Eles viram `«segredo omitido»`.
 - Ajuste no `config.json` com `arquivos_bloqueados` e `arquivos_liberados` (padrões glob).
 
+### Gasto de tokens
+
+Cada vez que o modelo pede uma ferramenta, a conversa inteira é reenviada a ele, e o
+provedor cobra por esse reenvio. Por isso o dante evita rodadas desnecessárias:
+
+- **O diff vai na sua mensagem.** Ao perguntar sobre um commit ou arquivo, o diff com 10
+  linhas de contexto vai junto, uma vez por conversa. Diffs grandes (mais de 60 KB ou de
+  1/4 do contexto) viram um aviso, e o modelo pede o diff por arquivo.
+- **O modelo lê em lote.** A ferramenta `read_files` abre vários arquivos ou trechos numa
+  chamada só, e as instruções pedem para abrir só o que o diff não mostra.
+- **Cada pergunta tem um orçamento.** Por padrão são 150 mil tokens, somando todas as
+  rodadas. Passado o orçamento, o dante não executa mais ferramentas e pede ao modelo para
+  concluir com o que já leu. Ajuste em `orcamento_tokens` no `config.json` (`-1` desliga).
+- **Cada resposta mostra quanto gastou** (`↳ 58,2 mil tokens nesta resposta`), e o cabeçalho
+  mostra o total da conversa.
+
+Numa simulação da revisão de um commit de 18 arquivos, essas mudanças levaram o gasto de
+20 requisições e cerca de 1 milhão de tokens para 3 requisições e cerca de 80 mil. O número
+real depende de o modelo seguir as instruções.
+
 ### Conversas longas
 
 Cada modelo tem um limite de contexto, e o dante cuida dele:
 - **Claude:** o próprio servidor limpa os resultados antigos de ferramentas quando a conversa
   passa de 150 mil tokens.
 - **Outros provedores:** quando a conversa passa de 70% do `contexto` do provedor (no
-  `config.json`), o dante troca os resultados de ferramentas de rodadas anteriores por um
-  aviso. O modelo pode ler o arquivo de novo se precisar. Resultados grandes demais (mais de
-  1/4 do contexto) são cortados. Quando nem assim a conversa cabe, o chat avisa, e `ctrl+n`
+  `config.json`; sem o campo, o dante assume 64 mil tokens), o dante troca os resultados de
+  ferramentas de rodadas anteriores por um aviso. O modelo pode ler o arquivo de novo se
+  precisar. Resultados grandes demais (mais de 1/4 do contexto) são cortados. Quando nem
+  assim a conversa cabe, o chat avisa, e `ctrl+n`
   começa outra.
 - **Ollama:** o dante usa a API nativa e define o tamanho do contexto (`num_ctx`, 16 mil
   tokens por padrão). Sem isso, o Ollama usa uma janela pequena e corta o começo da conversa

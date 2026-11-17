@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -214,5 +217,101 @@ func TestMouseFocoEArrasto(t *testing.T) {
 	}
 	if m.rects[pDiff].w+m.rects[pChat].w+m.rects[pLog].w != 150 {
 		t.Fatal("as colunas não somam a largura da tela")
+	}
+}
+
+func TestDescribeReadFiles(t *testing.T) {
+	c := llm.ToolCall{Name: "read_files", Args: `{"files":[{"path":"a.go"},{"path":"b.go","start_line":3}]}`}
+	if got := describeCall(c); got != "abriu 2 arquivos: a.go, b.go" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func gitRepo(t *testing.T) repo.Repo {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", args, out)
+		}
+	}
+	run("git", "init", "-q")
+	run("git", "config", "user.email", "t@example.com")
+	run("git", "config", "user.name", "T")
+	os.WriteFile(filepath.Join(dir, "a.py"), []byte("x = 1\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.py"), []byte("y = 1\n"), 0o644)
+	run("git", "add", ".")
+	run("git", "commit", "-qm", "inicial")
+	os.WriteFile(filepath.Join(dir, "a.py"), []byte("x = 2\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.py"), []byte("y = 2\n"), 0o644)
+	root, _ := repo.Root(dir)
+	return repo.Repo{Root: root}
+}
+
+func TestDiffNaMensagem(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.repo = gitRepo(t)
+	m.target = repo.WorkTree
+
+	first := m.diffBlock("")
+	if !strings.Contains(first, "<diff do alvo>") || !strings.Contains(first, "+x = 2") || !strings.Contains(first, "+y = 2") {
+		t.Fatalf("primeira mensagem sem o diff:\n%s", first)
+	}
+	// Enquanto a resposta não termina bem, o diff não conta como enviado.
+	if again := m.diffBlock(""); again == "" {
+		t.Fatal("sem resposta concluída, o diff deveria ir de novo")
+	}
+	nm, _ := m.onChatDone(chatDoneMsg{})
+	m = nm.(model)
+	if again := m.diffBlock(""); again != "" {
+		t.Fatalf("diff repetido na mesma conversa:\n%s", again)
+	}
+	if file := m.diffBlock("a.py"); file != "" {
+		t.Fatal("o diff do alvo inteiro já cobre o arquivo")
+	}
+	// Diff grande vira só um aviso.
+	m.resetChat()
+	m.prov.Contexto = 20 // ~15 bytes de limite
+	if big := m.diffBlock(""); !strings.Contains(big, "grande demais") || strings.Contains(big, "+x = 2") {
+		t.Fatalf("diff grande deveria virar aviso:\n%s", big)
+	}
+	// Pedido de um arquivo só leva o diff dele.
+	m.resetChat()
+	m.prov.Contexto = 0
+	if one := m.diffBlock("b.py"); !strings.Contains(one, "<diff de b.py>") || strings.Contains(one, "+x = 2") {
+		t.Fatalf("diff do arquivo:\n%s", one)
+	}
+}
+
+func TestGastoDaResposta(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.chatView.Width = 80
+	nm, _ := m.onChatDone(chatDoneMsg{usage: llm.Usage{InputTokens: 55000, OutputTokens: 3200}})
+	m = nm.(model)
+	if got := m.entries[len(m.entries)-1]; got.kind != eUsage || got.text != "58,2 mil tokens nesta resposta (entrada 55,0 mil · saída 3,2 mil)" {
+		t.Fatalf("entrada = %+v", got)
+	}
+	if humanTokens(950) != "950" || humanTokens(1_250_000) != "1,25 mi" {
+		t.Fatal("humanTokens")
+	}
+}
+
+func TestContextoPadrao(t *testing.T) {
+	m := model{}
+	m.prov = config.Provider{Tipo: llm.KindOpenAI} // ex.: Baidu acrescentado sem "contexto"
+	if got := m.effectiveContext(); got != defaultContextTokens {
+		t.Fatalf("sem contexto: %d", got)
+	}
+	m.prov.Contexto = 8000
+	if m.effectiveContext() != 8000 {
+		t.Fatal("contexto configurado deveria valer")
+	}
+	m.prov = config.Provider{Tipo: llm.KindAnthropic}
+	if m.effectiveContext() != 0 {
+		t.Fatal("no Claude o servidor cuida do contexto")
 	}
 }

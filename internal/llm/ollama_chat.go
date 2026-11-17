@@ -105,11 +105,13 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		c.messages = c.messages[:start]
 		return usage, err
 	}
+	guard := newGuard(c.opts.TurnBudget)
 	for step := 0; step < c.opts.MaxSteps; step++ {
 		bytesSent := c.fit(start, emit)
 		msg, chunk, err := c.complete(ctx, emit)
 		usage.InputTokens += chunk.PromptEvalCount
 		usage.OutputTokens += chunk.EvalCount
+		guard.add(Usage{InputTokens: chunk.PromptEvalCount, OutputTokens: chunk.EvalCount})
 		if err != nil {
 			return fail(err)
 		}
@@ -128,7 +130,12 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 			}
 			return usage, nil
 		}
+		run, stop := guard.check(emit)
 		for i, tc := range msg.ToolCalls {
+			if !run {
+				c.messages = append(c.messages, olMessage{Role: "tool", ToolName: tc.Function.Name, Content: "ERRO: " + budgetResult})
+				continue
+			}
 			args := string(tc.Function.Arguments)
 			if args == "" || args == "null" {
 				args = "{}"
@@ -149,6 +156,9 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		}
 		if ctx.Err() != nil {
 			return fail(ctx.Err())
+		}
+		if stop {
+			return usage, nil
 		}
 	}
 	emit(Event{Kind: EvNotice, Text: fmt.Sprintf("parei após %d rodadas de ferramentas", c.opts.MaxSteps), IsError: true})

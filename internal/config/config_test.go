@@ -93,3 +93,12 @@ func TestMigracaoDeConfigAntigo(t *testing.T) {
 		t.Fatal("provedor removido pelo usuário voltou")
 	}
 }
+
+func TestOrcamento(t *testing.T) {
+	cases := map[int]int{0: DefaultTurnBudget, -1: 0, 50000: 50000}
+	for in, want := range cases {
+		if got := (Config{OrcamentoTokens: in}).TurnBudget(); got != want {
+			t.Errorf("OrcamentoTokens=%d → %d, queria %d", in, got, want)
+		}
+	}
+}

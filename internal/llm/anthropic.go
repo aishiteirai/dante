@@ -97,6 +97,7 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 		return usage, err
 	}
 
+	guard := newGuard(c.opts.TurnBudget)
 	for step := 0; step < c.opts.MaxSteps; step++ {
 		stream := c.client.Beta.Messages.NewStreaming(ctx, c.params())
 		msg := anthropic.BetaMessage{}
@@ -116,6 +117,7 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 		}
 		usage.InputTokens += msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens
 		usage.OutputTokens += msg.Usage.OutputTokens
+		guard.add(Usage{InputTokens: msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens, OutputTokens: msg.Usage.OutputTokens})
 		c.messages = append(c.messages, msg.ToParam())
 
 		switch msg.StopReason {
@@ -130,6 +132,7 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 			return usage, nil
 		}
 
+		run, stop := guard.check(emit)
 		var results []anthropic.BetaContentBlockParamUnion
 		for _, b := range msg.Content {
 			tu, ok := b.AsAny().(anthropic.BetaToolUseBlock)
@@ -137,6 +140,10 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 				continue
 			}
 			call := ToolCall{ID: tu.ID, Name: tu.Name, Args: tu.JSON.Input.Raw()}
+			if !run { // todo tool_use precisa de um tool_result, mesmo sem executar
+				results = append(results, anthropic.NewBetaToolResultBlock(tu.ID, budgetResult, true))
+				continue
+			}
 			emit(Event{Kind: EvToolCall, Call: call})
 			out, isErr := c.opts.Exec(ctx, call)
 			emit(Event{Kind: EvToolResult, Call: call, Text: out, IsError: isErr})
@@ -146,6 +153,9 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 			return fail(ctx.Err())
 		}
 		c.messages = append(c.messages, anthropic.NewBetaUserMessage(results...))
+		if stop {
+			return usage, nil
+		}
 	}
 	emit(Event{Kind: EvNotice, Text: fmt.Sprintf("parei após %d rodadas de ferramentas", c.opts.MaxSteps), IsError: true})
 	return usage, nil
