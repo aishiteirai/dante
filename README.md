@@ -56,14 +56,35 @@ O jeito mais simples é cadastrar a chave pelo próprio dante:
 | Claude (Anthropic) | https://platform.claude.com/settings/keys |
 | DeepSeek | https://platform.deepseek.com/api_keys |
 | Qwen (Alibaba Cloud) | Alibaba Cloud Model Studio → API Key |
+| OpenCode Console / Go | https://opencode.ai/console → Account → Personal API keys |
 
 As chaves ficam em `~/.config/dante/credenciais.json`, um arquivo separado do `config.json`
 e legível só pelo seu usuário (permissão 600). Na tela de modelos, cada provedor mostra de
 onde vem a chave em uso. `x` remove a chave salva no dante.
 
 Também dá para usar variáveis de ambiente, como antes: `ANTHROPIC_API_KEY`,
-`DEEPSEEK_API_KEY` ou `DASHSCOPE_API_KEY`. Quando há as duas, a chave salva no dante tem
+`DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY` ou `OPENCODE_API_KEY`. Quando há as duas, a chave salva no dante tem
 prioridade.
+
+### OpenCode
+
+O dante traz os dois planos do [OpenCode](https://opencode.ai), que dão acesso a modelos como
+DeepSeek, Qwen, Kimi, GLM e MiniMax com uma única chave (`oc_sk_…`):
+
+- **OpenCode Console · pago por uso:** você coloca créditos e paga por requisição.
+- **OpenCode Go · assinatura:** a partir de US$ 10 por mês, com uso incluído.
+
+A mesma chave serve aos dois: cadastre num, e o outro já a usa. A lista de modelos é buscada
+ao vivo no OpenCode, com uma lista fixa de reserva.
+
+Os modelos grátis do OpenCode (`…-free`) **não funcionam no dante**: segundo a documentação
+do OpenCode, eles só funcionam dentro do próprio opencode. Por isso o dante os esconde. Para
+usar de graça, veja abaixo.
+
+Com o Go, o dante se identifica (`dante/…`) e manda um ID por conversa no cabeçalho
+`x-opencode-session`, como o OpenCode pede a clientes de fora. Modelos que treinam com os
+dados ou que rodam fora da Europa e dos EUA precisam ser liberados em **Settings → Privacy**
+no console do OpenCode. É o caso do DeepSeek, que pede a região **Global**.
 
 ### Modelos grátis
 

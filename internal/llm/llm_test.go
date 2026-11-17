@@ -226,7 +226,7 @@ func TestListModelsGratis(t *testing.T) {
 		]}`)
 	}))
 	defer srv.Close()
-	got, err := ListModels(context.Background(), Provider{BaseURL: srv.URL}, true)
+	got, err := ListModels(context.Background(), Provider{BaseURL: srv.URL}, FilterFree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestListModelsGratis(t *testing.T) {
 	if strings.Join(got, ",") != want {
 		t.Fatalf("got %v", got)
 	}
-	all, _ := ListModels(context.Background(), Provider{BaseURL: srv.URL}, false)
+	all, _ := ListModels(context.Background(), Provider{BaseURL: srv.URL}, FilterNone)
 	if len(all) != 5 {
 		t.Fatalf("sem filtro: %v", all)
 	}
@@ -256,5 +256,45 @@ func TestOllamaPull(t *testing.T) {
 	})
 	if err != nil || !strings.HasPrefix(pedido, "/api/pull ") || !strings.Contains(pedido, `"qwen3:8b"`) || len(passos) != 3 {
 		t.Fatalf("err=%v pedido=%q passos=%v", err, pedido, passos)
+	}
+}
+
+func TestIdentificacaoESessao(t *testing.T) {
+	var agentes, sessoes []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agentes = append(agentes, r.Header.Get("User-Agent"))
+		sessoes = append(sessoes, r.Header.Get("x-opencode-session"))
+		if r.URL.Path == "/lista" {
+			fmt.Fprint(w, `{"data":[{"id":"kimi-k3"},{"id":"beam-free"},{"id":"deepseek-v4-pro"}]}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	p := Provider{Kind: KindOpenAI, BaseURL: srv.URL + "/v1", APIKey: "k", SessionHeader: "x-opencode-session", ModelsURL: srv.URL + "/lista"}
+	a, _ := New(p, Options{Model: "m"})
+	b, _ := New(p, Options{Model: "m"})
+	for _, c := range []Chat{a, a, b} {
+		if _, err := c.Send(context.Background(), "oi", func(Event) {}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if agentes[0] != UserAgent {
+		t.Fatalf("User-Agent = %q", agentes[0])
+	}
+	if !strings.HasPrefix(sessoes[0], "ses_") || sessoes[0] != sessoes[1] || sessoes[1] == sessoes[2] {
+		t.Fatalf("sessões = %v (mesma conversa deve repetir o ID; outra conversa, não)", sessoes)
+	}
+	models, err := ListModels(context.Background(), p, FilterNotFree)
+	if err != nil || strings.Join(models, ",") != "deepseek-v4-pro,kimi-k3" {
+		t.Fatalf("ListModels com ModelsURL e sem os -free = %v, %v", models, err)
+	}
+	// Sem SessionHeader, nenhum cabeçalho de sessão é enviado.
+	sessoes = nil
+	c, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL + "/v1"}, Options{Model: "m"})
+	c.Send(context.Background(), "oi", func(Event) {})
+	if sessoes[0] != "" {
+		t.Fatalf("sessão enviada sem pedido: %q", sessoes[0])
 	}
 }

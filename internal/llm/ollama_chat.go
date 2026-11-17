@@ -181,6 +181,7 @@ func (c *ollamaChat) complete(ctx context.Context, emit func(Event)) (olMessage,
 		return olMessage{}, olChunk{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return olMessage{}, olChunk{}, fmt.Errorf("não consegui conectar no Ollama em %s (ele está aberto?)", ollamaRoot(c.p.BaseURL))

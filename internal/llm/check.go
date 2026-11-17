@@ -40,6 +40,7 @@ func CheckKey(ctx context.Context, p Provider) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	req.Header.Set("User-Agent", UserAgent)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("não consegui conectar em %s", p.BaseURL)

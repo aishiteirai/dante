@@ -66,7 +66,7 @@ func TestOllamaNativo(t *testing.T) {
 	if !avisou || u.InputTokens != 4396 {
 		t.Fatalf("aviso de contexto=%v uso=%+v", avisou, u)
 	}
-	models, err := ListModels(context.Background(), Provider{Kind: KindOllama, BaseURL: srv.URL + "/v1"}, false)
+	models, err := ListModels(context.Background(), Provider{Kind: KindOllama, BaseURL: srv.URL + "/v1"}, FilterNone)
 	if err != nil || strings.Join(models, ",") != "deepseek-r1:8b,qwen3:8b" {
 		t.Fatalf("modelos = %v, %v", models, err)
 	}

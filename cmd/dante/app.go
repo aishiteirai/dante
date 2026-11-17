@@ -258,7 +258,7 @@ func listModels(p config.Provider) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		ms, err := llm.ListModels(ctx, p.LLM(), p.Filtro == "gratis")
+		ms, err := llm.ListModels(ctx, p.LLM(), p.Filtro)
 		return modelsListedMsg{prov: p.ID, models: ms, err: err}
 	}
 }

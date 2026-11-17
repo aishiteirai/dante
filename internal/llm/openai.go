@@ -75,10 +75,11 @@ type openAIChat struct {
 	tools    []oaTool
 	messages []oaMessage
 	budget   *budget
+	session  string
 }
 
 func newOpenAI(p Provider, o Options) *openAIChat {
-	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}, budget: newBudget(o.ContextTokens)}
+	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}, budget: newBudget(o.ContextTokens), session: newSessionID()}
 	if o.System != "" {
 		c.messages = append(c.messages, oaMessage{Role: "system", Content: ptr(o.System)})
 	}
@@ -193,6 +194,10 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("User-Agent", UserAgent)
+	if c.p.SessionHeader != "" {
+		req.Header.Set(c.p.SessionHeader, c.session)
+	}
 	if k := c.p.Key(); k != "" {
 		req.Header.Set("Authorization", "Bearer "+k)
 	}
@@ -321,17 +326,29 @@ func httpError(status int, body []byte, p Provider) error {
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
 
-// ListModels consulta GET /models (Ollama, LM Studio, vLLM, OpenRouter...). Com onlyFree,
-// devolve só os modelos de preço zero que aceitam ferramentas (formato do OpenRouter),
-// com DeepSeek e Qwen primeiro.
-func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error) {
+// Filtros de ListModels.
+const (
+	FilterNone    = ""
+	FilterFree    = "gratis"     // só preço zero com ferramentas (formato do OpenRouter)
+	FilterNotFree = "sem_gratis" // tira os "-free" (no OpenCode, só funcionam dentro do opencode)
+)
+
+// ListModels consulta GET /models (Ollama, LM Studio, vLLM, OpenRouter, OpenCode...),
+// aplica o filtro e põe DeepSeek e Qwen primeiro.
+func ListModels(ctx context.Context, p Provider, filter string) ([]string, error) {
+	onlyFree := filter == FilterFree
 	if p.Kind == KindOllama {
 		return listOllama(ctx, p)
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(p.BaseURL, "/")+"/models", nil)
+	url := strings.TrimSuffix(p.BaseURL, "/") + "/models"
+	if p.ModelsURL != "" {
+		url = p.ModelsURL
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", UserAgent)
 	if k := p.Key(); k != "" {
 		req.Header.Set("Authorization", "Bearer "+k)
 	}
@@ -365,6 +382,9 @@ func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error
 			if d.SupportedParameters != nil && !contains(d.SupportedParameters, "tools") {
 				continue // sem ferramentas o modelo não consegue abrir arquivos
 			}
+		}
+		if filter == FilterNotFree && strings.HasSuffix(d.ID, "-free") {
+			continue
 		}
 		ids = append(ids, d.ID)
 	}
