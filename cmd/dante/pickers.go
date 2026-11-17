@@ -255,6 +255,8 @@ func (m *model) buildModelRows() {
 				switch {
 				case listed && p.Filtro == "gratis":
 					h.note = fmt.Sprintf("%d grátis · %s", len(list), h.note)
+				case listed:
+					h.note = fmt.Sprintf("%s · %s", plural(len(list), "modelo", "modelos"), h.note)
 				case failed:
 					h.note = "não consegui listar os modelos · " + h.note
 				case !listed:

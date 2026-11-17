@@ -22,10 +22,16 @@ type Provider struct {
 	Listar    bool     `json:"listar_modelos,omitempty"` // consulta GET /models (servidores locais)
 	Local     bool     `json:"local,omitempty"`
 	SiteChave string   `json:"site_chave,omitempty"` // onde gerar a chave
-	Filtro    string   `json:"filtro,omitempty"`     // "gratis": lista só modelos de preço zero
+	Filtro    string   `json:"filtro,omitempty"`     // "gratis" (só preço zero) ou "sem_gratis" (tira os -free)
 	// Tamanho do contexto do modelo, em tokens. Guia a poda de resultados antigos; no
 	// Ollama também define o num_ctx (mais contexto usa mais memória).
-	Contexto  int        `json:"contexto,omitempty"`
+	Contexto int `json:"contexto,omitempty"`
+	// Cabeçalho em que vai um ID estável por conversa (ex.: x-opencode-session).
+	CabecalhoSessao string `json:"cabecalho_sessao,omitempty"`
+	// Onde listar os modelos, quando não é url + "/models".
+	URLModelos string `json:"url_modelos,omitempty"`
+	// Usa a chave cadastrada de outro provedor (ex.: OpenCode Go usa a do OpenCode Console).
+	ChaveDe   string     `json:"chave_de,omitempty"`
 	Sugeridos []Sugestao `json:"sugeridos,omitempty"` // modelos para baixar (Ollama)
 
 	salva string // chave cadastrada pelo dante (credenciais.json)
@@ -40,7 +46,16 @@ func (p Provider) key() string {
 }
 
 func (p Provider) LLM() llm.Provider {
-	return llm.Provider{ID: p.ID, Kind: p.Tipo, BaseURL: p.URL, APIKey: p.key(), APIKeyEnv: p.ChaveEnv}
+	return llm.Provider{ID: p.ID, Kind: p.Tipo, BaseURL: p.URL, APIKey: p.key(), APIKeyEnv: p.ChaveEnv,
+		SessionHeader: p.CabecalhoSessao, ModelsURL: p.URLModelos}
+}
+
+// CredID é o provedor sob o qual a chave fica salva (o próprio, ou o de chave_de).
+func (p Provider) CredID() string {
+	if p.ChaveDe != "" {
+		return p.ChaveDe
+	}
+	return p.ID
 }
 
 // WithKey devolve uma cópia do provedor usando esta chave (para testar antes de salvar).
@@ -137,6 +152,18 @@ func Defaults() Config {
 			{ID: "openrouter", Nome: "OpenRouter · modelos grátis", Tipo: llm.KindOpenAI,
 				URL: "https://openrouter.ai/api/v1", ChaveEnv: "OPENROUTER_API_KEY",
 				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis", Contexto: 32000},
+			// OpenCode Console e Go: fora do próprio opencode só funcionam os modelos pagos e
+			// os do Go; os "-free" não. Ver https://opencode.ai/docs/console/models.
+			{ID: "opencode", Nome: "OpenCode Console · pago por uso", Tipo: llm.KindOpenAI,
+				URL: "https://opencode.ai/inference/openai/v1", URLModelos: "https://opencode.ai/inference/v1/models",
+				ChaveEnv: "OPENCODE_API_KEY", SiteChave: "https://opencode.ai/console → Account → Personal API keys",
+				Listar: true, Filtro: "sem_gratis", Contexto: 128000, CabecalhoSessao: "x-opencode-session",
+				Modelos: []string{"deepseek-v4-pro", "deepseek-v4.1-flash", "qwen3.8-max", "kimi-k3", "glm-5.3", "minimax-m3"}},
+			{ID: "opencode-go", Nome: "OpenCode Go · assinatura", Tipo: llm.KindOpenAI,
+				URL: "https://opencode.ai/inference/go/openai/v1", URLModelos: "https://opencode.ai/inference/go/v1/models",
+				ChaveEnv: "OPENCODE_API_KEY", ChaveDe: "opencode", SiteChave: "https://opencode.ai/console → assine o Go → Personal API keys",
+				Listar: true, Filtro: "sem_gratis", Contexto: 128000, CabecalhoSessao: "x-opencode-session",
+				Modelos: []string{"kimi-k3", "deepseek-v4-pro", "deepseek-v4.1-flash", "minimax-m3", "glm-5.3", "qwen3.8-max"}},
 			{ID: "ollama", Nome: "Ollama (local, grátis)", Tipo: llm.KindOllama, URL: "http://localhost:11434",
 				Listar: true, Local: true, Contexto: 16384, Sugeridos: []Sugestao{
 					{Modelo: "qwen2.5-coder:7b", Tamanho: "4,7 GB", Nota: "bom para começar; ~8 GB de RAM"},
@@ -221,7 +248,7 @@ func loadCredentials() map[string]string {
 func (c *Config) applyCredentials() {
 	creds := loadCredentials()
 	for i := range c.Provedores {
-		c.Provedores[i].salva = creds[c.Provedores[i].ID]
+		c.Provedores[i].salva = creds[c.Provedores[i].CredID()]
 	}
 }
 

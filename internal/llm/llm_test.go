@@ -226,7 +226,7 @@ func TestListModelsGratis(t *testing.T) {
 		]}`)
 	}))
 	defer srv.Close()
-	got, err := ListModels(context.Background(), Provider{BaseURL: srv.URL}, true)
+	got, err := ListModels(context.Background(), Provider{BaseURL: srv.URL}, FilterFree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestListModelsGratis(t *testing.T) {
 	if strings.Join(got, ",") != want {
 		t.Fatalf("got %v", got)
 	}
-	all, _ := ListModels(context.Background(), Provider{BaseURL: srv.URL}, false)
+	all, _ := ListModels(context.Background(), Provider{BaseURL: srv.URL}, FilterNone)
 	if len(all) != 5 {
 		t.Fatalf("sem filtro: %v", all)
 	}
@@ -265,7 +265,7 @@ func TestIdentificacaoESessao(t *testing.T) {
 		agentes = append(agentes, r.Header.Get("User-Agent"))
 		sessoes = append(sessoes, r.Header.Get("x-opencode-session"))
 		if r.URL.Path == "/lista" {
-			fmt.Fprint(w, `{"data":[{"id":"kimi-k3"}]}`)
+			fmt.Fprint(w, `{"data":[{"id":"kimi-k3"},{"id":"beam-free"},{"id":"deepseek-v4-pro"}]}`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -286,9 +286,9 @@ func TestIdentificacaoESessao(t *testing.T) {
 	if !strings.HasPrefix(sessoes[0], "ses_") || sessoes[0] != sessoes[1] || sessoes[1] == sessoes[2] {
 		t.Fatalf("sessões = %v (mesma conversa deve repetir o ID; outra conversa, não)", sessoes)
 	}
-	models, err := ListModels(context.Background(), p, false)
-	if err != nil || len(models) != 1 || models[0] != "kimi-k3" {
-		t.Fatalf("ListModels com ModelsURL = %v, %v", models, err)
+	models, err := ListModels(context.Background(), p, FilterNotFree)
+	if err != nil || strings.Join(models, ",") != "deepseek-v4-pro,kimi-k3" {
+		t.Fatalf("ListModels com ModelsURL e sem os -free = %v, %v", models, err)
 	}
 	// Sem SessionHeader, nenhum cabeçalho de sessão é enviado.
 	sessoes = nil

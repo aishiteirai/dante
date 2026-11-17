@@ -326,10 +326,17 @@ func httpError(status int, body []byte, p Provider) error {
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
 
-// ListModels consulta GET /models (Ollama, LM Studio, vLLM, OpenRouter...). Com onlyFree,
-// devolve só os modelos de preço zero que aceitam ferramentas (formato do OpenRouter),
-// com DeepSeek e Qwen primeiro.
-func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error) {
+// Filtros de ListModels.
+const (
+	FilterNone    = ""
+	FilterFree    = "gratis"     // só preço zero com ferramentas (formato do OpenRouter)
+	FilterNotFree = "sem_gratis" // tira os "-free" (no OpenCode, só funcionam dentro do opencode)
+)
+
+// ListModels consulta GET /models (Ollama, LM Studio, vLLM, OpenRouter, OpenCode...),
+// aplica o filtro e põe DeepSeek e Qwen primeiro.
+func ListModels(ctx context.Context, p Provider, filter string) ([]string, error) {
+	onlyFree := filter == FilterFree
 	if p.Kind == KindOllama {
 		return listOllama(ctx, p)
 	}
@@ -375,6 +382,9 @@ func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error
 			if d.SupportedParameters != nil && !contains(d.SupportedParameters, "tools") {
 				continue // sem ferramentas o modelo não consegue abrir arquivos
 			}
+		}
+		if filter == FilterNotFree && strings.HasSuffix(d.ID, "-free") {
+			continue
 		}
 		ids = append(ids, d.ID)
 	}

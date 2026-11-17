@@ -76,6 +76,11 @@ func TestMigracaoDeConfigAntigo(t *testing.T) {
 	if o, _ := c.Provider("ollama"); o.Tipo != "ollama" || o.URL != "http://localhost:11434" || o.Contexto != 16384 {
 		t.Fatalf("Ollama deveria migrar para a API nativa: %+v", o)
 	}
+	for _, id := range []string{"opencode", "opencode-go"} {
+		if _, ok := c.Provider(id); !ok {
+			t.Fatalf("%s deveria ter sido acrescentado ao config antigo", id)
+		}
+	}
 	if d, _ := c.Provider("deepseek"); d.Contexto != 128000 {
 		t.Fatalf("contexto do DeepSeek = %d", d.Contexto)
 	}
@@ -100,5 +105,31 @@ func TestOrcamento(t *testing.T) {
 		if got := (Config{OrcamentoTokens: in}).TurnBudget(); got != want {
 			t.Errorf("OrcamentoTokens=%d → %d, queria %d", in, got, want)
 		}
+	}
+}
+
+func TestOpenCode(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	t.Setenv("OPENCODE_API_KEY", "")
+	c, _ := Load()
+	console, ok1 := c.Provider("opencode")
+	goSub, ok2 := c.Provider("opencode-go")
+	if !ok1 || !ok2 {
+		t.Fatal("provedores do OpenCode ausentes")
+	}
+	if l := goSub.LLM(); l.SessionHeader != "x-opencode-session" || l.BaseURL != "https://opencode.ai/inference/go/openai/v1" || l.ModelsURL == "" {
+		t.Fatalf("OpenCode Go = %+v", l)
+	}
+	if console.HasKey() || goSub.HasKey() {
+		t.Fatal("sem chave ainda")
+	}
+	// Uma chave cadastrada no Console vale também para o Go (e vice-versa).
+	if err := c.SetKey(goSub.CredID(), "oc_sk_teste"); err != nil {
+		t.Fatal(err)
+	}
+	console, _ = c.Provider("opencode")
+	goSub, _ = c.Provider("opencode-go")
+	if console.LLM().Key() != "oc_sk_teste" || goSub.LLM().Key() != "oc_sk_teste" || goSub.KeySource() != "dante" {
+		t.Fatal("chave compartilhada não funcionou")
 	}
 }

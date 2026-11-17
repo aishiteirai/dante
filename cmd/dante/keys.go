@@ -103,7 +103,7 @@ func (m model) onKeyChecked(msg keyCheckedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) saveKey(key string, verified bool) (tea.Model, tea.Cmd) {
-	if err := m.cfg.SetKey(m.keyProv.ID, key); err != nil {
+	if err := m.cfg.SetKey(m.keyProv.CredID(), key); err != nil {
 		m.keyErr = "não consegui salvar: " + err.Error()
 		return m, nil
 	}
@@ -135,7 +135,7 @@ func (m model) removeKey(p config.Provider) (tea.Model, tea.Cmd) {
 		m.setInfo("não há chave salva no dante para " + p.Nome)
 		return m, nil
 	}
-	if err := m.cfg.SetKey(p.ID, ""); err != nil {
+	if err := m.cfg.SetKey(p.CredID(), ""); err != nil {
 		m.setErr(err.Error())
 		return m, nil
 	}
