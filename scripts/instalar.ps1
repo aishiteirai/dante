@@ -12,7 +12,24 @@ $ErrorActionPreference = 'Stop'
 
 $repo = 'aishiteirai/dante'
 $base = if ($env:DANTE_URL_BASE) { $env:DANTE_URL_BASE } else { "https://github.com/$repo/releases" }
-$release = if ($env:DANTE_VERSAO) { "$base/download/$($env:DANTE_VERSAO)" } else { "$base/latest/download" }
+$api = if ($env:DANTE_API) { $env:DANTE_API } else { "https://api.github.com/repos/$repo" }
+
+# Sem DANTE_VERSAO: a Release mais recente. O link "latest" do GitHub ignora pré-releases
+# (ex.: v0.5.0-alpha); sem nenhuma versão estável, usa a mais recente de todas.
+$versao = $env:DANTE_VERSAO
+if (-not $versao) {
+    try {
+        Invoke-WebRequest -Uri "$base/latest/download/SHA256SUMS.txt" -Method Head -UseBasicParsing | Out-Null
+    } catch {
+        $releases = @(Invoke-RestMethod -Uri "$api/releases?per_page=1" -UseBasicParsing)
+        if ($releases.Count -eq 0 -or -not $releases[0].tag_name) {
+            throw "Ainda não há Release publicada em https://github.com/$repo/releases"
+        }
+        $versao = $releases[0].tag_name
+        Write-Host "Sem versão estável; usando a pré-release $versao."
+    }
+}
+$release = if ($versao) { "$base/download/$versao" } else { "$base/latest/download" }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
 $asset = "dante-windows-$arch.exe"
