@@ -182,3 +182,37 @@ func TestSugestoesDoOllama(t *testing.T) {
 		t.Fatal("depois do download, o modelo deveria ficar pré-selecionado")
 	}
 }
+
+func TestMouseFocoEArrasto(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.screen = scrMain
+	m.repo = repo.Repo{Root: t.TempDir()}
+	nm, _ := m.Update(tea.WindowSizeMsg{Width: 150, Height: 40})
+	m = nm.(model)
+	chat := m.rects[pChat]
+	// Clique dentro do chat dá foco a ele.
+	nm, _ = m.Update(tea.MouseMsg{X: chat.x + 5, Y: chat.y + 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m = nm.(model)
+	if m.focus != pChat {
+		t.Fatalf("foco = %s", paneNames[m.focus])
+	}
+	// Arrastar a borda entre Diff e Chat 10 colunas para a esquerda.
+	before := m.rects[pDiff].w
+	border := chat.x
+	nm, _ = m.Update(tea.MouseMsg{X: border, Y: chat.y + 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m = nm.(model)
+	if m.drag == nil || !m.drag.vertical {
+		t.Fatal("deveria começar a arrastar a borda")
+	}
+	nm, _ = m.Update(tea.MouseMsg{X: border - 10, Y: chat.y + 3, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	m = nm.(model)
+	nm, _ = m.Update(tea.MouseMsg{X: border - 10, Y: chat.y + 3, Action: tea.MouseActionRelease})
+	m = nm.(model)
+	if got := m.rects[pDiff].w; got < before-11 || got > before-9 {
+		t.Fatalf("largura do Diff %d -> %d, esperava ~%d", before, got, before-10)
+	}
+	if m.rects[pDiff].w+m.rects[pChat].w+m.rects[pLog].w != 150 {
+		t.Fatal("as colunas não somam a largura da tela")
+	}
+}

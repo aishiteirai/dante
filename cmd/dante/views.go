@@ -2,13 +2,15 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
-const narrowWidth = 110
+// Abaixo desta largura, só o painel com foco aparece (como na tela cheia).
+const narrowWidth = 80
 
 func truncateW(s string, w int) string { return ansi.Truncate(s, max(w, 1), "…") }
 
@@ -33,40 +35,46 @@ func (m model) View() string {
 
 func (m model) narrow() bool { return m.width < narrowWidth }
 
-// Larguras externas (com borda) dos três painéis.
-func (m model) paneWidths() (int, int, int) {
-	if m.narrow() {
-		return m.width, m.width, m.width
-	}
-	wl := m.width * 28 / 100
-	wf := m.width * 32 / 100
-	return wl, wf, m.width - wl - wf
-}
+func (m model) zoomed() bool { return m.zoom || m.narrow() }
 
-func (m model) paneHeight() int { return max(m.height-2, 8) } // header + rodapé
+func (m model) areaHeight() int { return max(m.height-2, 6) } // header + rodapé
 
-func (m model) innerHeight() int { return m.paneHeight() - 2 }
-
-func (m model) logHeight() int { return max(m.innerHeight()-1, 1) } // menos o título
-
-func (m model) filesListHeight() int {
-	n := max(len(m.files), 1)
-	return min(n, max(3, (m.innerHeight()-2)/3))
-}
-
-func (m *model) resize() {
+// relayout recalcula os retângulos e ajusta o tamanho dos componentes de cada painel.
+func (m *model) relayout() {
 	if m.width == 0 {
 		return
 	}
-	_, wf, wc := m.paneWidths()
-	m.preview.Width = wf - 4
-	m.preview.Height = max(m.innerHeight()-m.filesListHeight()-2, 3)
-	m.chatView.Width = wc - 4
-	m.chatView.Height = max(m.innerHeight()-1-1-m.input.Height(), 3)
-	m.input.SetWidth(wc - 4)
+	if m.lay.isMinimized(m.focus) {
+		if vs := m.lay.visiblePanes(); len(vs) > 0 {
+			m.focus = vs[0]
+		}
+	}
+	m.rects = m.lay.compute(0, 1, m.width, m.areaHeight(), m.focus, m.zoomed())
+	if r, ok := m.rects[pDiff]; ok && r.h > 2 {
+		m.preview.Width, m.preview.Height = max(r.w-4, 4), max(r.h-2, 1)
+	}
+	if r, ok := m.rects[pChat]; ok && r.h > 2 {
+		m.chatView.Width = max(r.w-4, 10)
+		m.chatView.Height = max(r.h-2-1-m.input.Height(), 1)
+		m.input.SetWidth(max(r.w-4, 10))
+	}
+	m.logOff = scrollTo(max(m.logIdx, 0), m.logOff, m.logHeight())
+	m.fileOff = scrollTo(m.fileIdx, m.fileOff, m.filesRows())
 	m.renderPreview()
 	m.refreshChat()
 }
+
+func (m *model) resize() { m.relayout() }
+
+func (m model) innerRows(p paneID) int {
+	if r, ok := m.rects[p]; ok && r.h > 2 {
+		return r.h - 2
+	}
+	return max(m.areaHeight()-2, 1)
+}
+
+func (m model) logHeight() int { return m.innerRows(pLog) }
+func (m model) filesRows() int { return m.innerRows(pFiles) }
 
 // ---- prévia (diff ou documento aberto pelo modelo) ----
 
@@ -103,47 +111,196 @@ func (m *model) renderPreview() {
 	m.preview.SetContent(strings.Join(out, "\n"))
 }
 
+// ---- moldura dos painéis (título na borda, como no noct) ----
+
+func (m model) paneTitle(p paneID) (title, extra string) {
+	title = fmt.Sprintf("[%d] %s", p+1, paneNames[p])
+	switch p {
+	case pFiles:
+		extra = m.targetLabel()
+	case pDiff:
+		if m.previewTitle != "" {
+			title = fmt.Sprintf("[%d] %s", p+1, m.previewTitle)
+		}
+	case pChat:
+		if m.modelName == "" {
+			extra = "sem modelo (m)"
+		} else if m.streaming {
+			extra = m.spin.View() + " respondendo"
+		}
+	}
+	return
+}
+
+func (m model) paneStatus(p paneID) string {
+	if p != m.focus {
+		return ""
+	}
+	switch m.mode {
+	case modeMove:
+		return "mover: setas · esc"
+	case modeResize:
+		return "redimensionar: setas · esc"
+	}
+	if m.zoom {
+		return "⛶ tela cheia"
+	}
+	return ""
+}
+
+func (m model) frame(p paneID, r rect, content string) []string {
+	focused := p == m.focus
+	border := lipgloss.NewStyle().Foreground(faint)
+	tst := boldStyle
+	if focused {
+		border = lipgloss.NewStyle().Foreground(accent)
+		tst = titleStyle
+	}
+	title, extra := m.paneTitle(p)
+
+	// Painel dobrado numa pilha: uma linha só.
+	if r.h <= 2 {
+		label := "▸ " + title
+		if extra != "" {
+			label += "  " + extra
+		}
+		line := tst.Render(truncateW(label, r.w-2)) + " "
+		line += border.Render(strings.Repeat("─", max(r.w-lipgloss.Width(line), 0)))
+		lines := []string{truncateW(line, r.w)}
+		for len(lines) < r.h {
+			lines = append(lines, strings.Repeat(" ", r.w))
+		}
+		return lines
+	}
+
+	inner := r.w - 4
+	status := m.paneStatus(p)
+	head := tst.Render(title)
+	if extra != "" {
+		head += " " + subtleStyle.Render(extra)
+	}
+	room := r.w - 5 // "╭─ " + " " + "╮"
+	if status != "" {
+		room -= lipgloss.Width(status) + 3
+	}
+	head = truncateW(head, max(room, 1))
+	top := border.Render("╭─ ") + head + " "
+	fill := r.w - lipgloss.Width(top) - 1
+	if status != "" {
+		fill -= lipgloss.Width(status) + 2
+	}
+	top += border.Render(strings.Repeat("─", max(fill, 0)))
+	if status != "" {
+		top += " " + warnStyle.Render(status) + " "
+	}
+	top += border.Render("╮")
+
+	lines := []string{truncateW(top, r.w)}
+	body := strings.Split(content, "\n")
+	for i := 0; i < r.h-2; i++ {
+		l := ""
+		if i < len(body) {
+			l = body[i]
+		}
+		lines = append(lines, border.Render("│")+" "+padTo(truncateW(l, inner), inner)+" "+border.Render("│"))
+	}
+	lines = append(lines, border.Render("╰"+strings.Repeat("─", max(r.w-2, 0))+"╯"))
+	return lines
+}
+
 // ---- tela principal ----
 
+func (m model) paneContent(p paneID, r rect) string {
+	w, h := r.w-4, r.h-2
+	switch p {
+	case pLog:
+		return m.viewLog(w, h)
+	case pFiles:
+		return m.viewFiles(w, h)
+	case pDiff:
+		return m.preview.View()
+	case pChat:
+		return m.viewChat(w)
+	}
+	return ""
+}
+
 func (m model) viewMain() string {
-	wl, wf, wc := m.paneWidths()
-	h := m.paneHeight()
-	logP := m.box(m.viewLog(wl-4), wl, h, m.focus == pLog)
-	filesP := m.box(m.viewFiles(wf-4), wf, h, m.focus == pFiles)
-	chatP := m.box(m.viewChat(wc-4), wc, h, m.focus == pChat)
-	var body string
-	if m.narrow() {
-		body = []string{logP, filesP, chatP}[m.focus]
-	} else {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, logP, filesP, chatP)
+	H := m.areaHeight()
+	type placed struct {
+		r     rect
+		lines []string
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.footer())
+	var ps []placed
+	for p, r := range m.rects {
+		content := ""
+		if r.h > 2 {
+			content = m.paneContent(p, r)
+		}
+		ps = append(ps, placed{r, m.frame(p, r, content)})
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i].r.x < ps[j].r.x })
+	rows := make([]string, H)
+	for y := 0; y < H; y++ {
+		var b strings.Builder
+		for _, pl := range ps {
+			if yy := y + 1 - pl.r.y; yy >= 0 && yy < pl.r.h {
+				b.WriteString(pl.lines[yy])
+			}
+		}
+		rows[y] = b.String()
+	}
+	screen := append([]string{m.header()}, rows...)
+	screen = append(screen, m.footer())
+	if m.mode == modePrefix {
+		screen = overlay(screen, m.commandsPopup(), m.width)
+	}
+	return strings.Join(screen, "\n")
 }
 
-func (m model) box(content string, w, h int, focused bool) string {
-	st := paneStyle
-	if focused {
-		st = paneFocus
+// overlay desenha o popup centralizado por cima das linhas da tela.
+func overlay(screen []string, popup string, width int) []string {
+	pl := strings.Split(popup, "\n")
+	pw := lipgloss.Width(popup)
+	x := max((width-pw)/2, 0)
+	y := max((len(screen)-len(pl))/2, 0)
+	for i, l := range pl {
+		if y+i >= len(screen) {
+			break
+		}
+		base := padTo(screen[y+i], width)
+		left := ansi.Truncate(base, x, "")
+		right := ansi.Cut(base, x+lipgloss.Width(l), width)
+		screen[y+i] = left + l + right
 	}
-	// Corta o conteúdo na altura exata para os painéis ficarem alinhados.
-	lines := strings.Split(content, "\n")
-	inner := h - 2
-	if len(lines) > inner {
-		lines = lines[:inner]
-	}
-	for len(lines) < inner {
-		lines = append(lines, "")
-	}
-	return st.Width(w - 2).Height(inner).Render(strings.Join(lines, "\n"))
+	return screen
 }
 
-func (m model) paneTitle(n int, title, extra string, w int) string {
-	num := subtleStyle.Render(fmt.Sprintf("[%d] ", n))
-	t := boldStyle.Render(title)
-	if pane(n-1) == m.focus {
-		t = titleStyle.Render(title)
+var commandHelp = [][2]string{
+	{"←↑↓→ hjkl", "foco no painel ao lado"},
+	{"a", "mover o painel (depois setas)"},
+	{"n", "redimensionar (depois setas)"},
+	{"w", "empilhar / separar a coluna"},
+	{"f", "tela cheia"},
+	{"z", "minimizar o painel"},
+	{"1 2 3 4", "ir para o painel (restaura)"},
+	{"0", "voltar ao layout padrão"},
+	{"m", "trocar o modelo"},
+	{"o", "abrir outro repositório"},
+	{"u", "atualizar commits e arquivos"},
+	{"q", "sair do dante"},
+}
+
+func (m model) commandsPopup() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("comandos") + "\n\n")
+	for _, c := range commandHelp {
+		b.WriteString(selectedStyle.Render(padTo(c[0], 11)) + " " + c[1] + "\n")
 	}
-	return truncateW(num+t+" "+subtleStyle.Render(extra), w)
+	b.WriteString("\n" + subtleStyle.Render("Direto, sem o prefixo: Alt + tecla.") + "\n")
+	b.WriteString(subtleStyle.Render("Alt+Shift+setas move o painel.") + "\n")
+	b.WriteString(subtleStyle.Render("esc fecha"))
+	return boxStyle.Padding(1, 2).Render(b.String())
 }
 
 func (m model) header() string {
@@ -162,12 +319,13 @@ func (m model) header() string {
 		}
 	}
 	if m.narrow() {
-		tabs := []string{"Commits", "Arquivos", "Chat"}
-		for i, t := range tabs {
-			if pane(i) == m.focus {
-				tabs[i] = selectedStyle.Render(t)
+		var tabs []string
+		for _, p := range m.lay.visiblePanes() {
+			t := fmt.Sprintf("%d %s", p+1, paneNames[p])
+			if p == m.focus {
+				tabs = append(tabs, selectedStyle.Render(t))
 			} else {
-				tabs[i] = subtleStyle.Render(t)
+				tabs = append(tabs, subtleStyle.Render(t))
 			}
 		}
 		right = strings.Join(tabs, subtleStyle.Render(" · "))
@@ -184,40 +342,65 @@ func humanInt(n int64) string {
 }
 
 func (m model) footer() string {
+	// À direita: painéis minimizados.
+	dock := ""
+	if len(m.lay.Minimized) > 0 {
+		var ps []string
+		for _, p := range m.lay.Minimized {
+			ps = append(ps, fmt.Sprintf("[%d] %s", p+1, paneNames[p]))
+		}
+		dock = warnStyle.Render("▾ " + strings.Join(ps, "  "))
+	}
+	left := ""
 	if m.status != "" {
 		st := subtleStyle
 		if m.statusErr {
 			st = errStyle
 		}
-		return truncateW(st.Render(m.status), m.width)
+		left = st.Render(m.status)
+	} else {
+		left = helpStyle.Render(m.helpLine())
 	}
-	var help string
-	switch m.focus {
-	case pLog:
-		help = "↑↓ commit · enter arquivos · r revisar alvo · m modelo · u atualizar · esc trocar repositório · tab painel · q sair"
-	case pFiles:
-		help = "↑↓ arquivo · J/K rolar · r revisar arquivo · o abrir no editor · d voltar ao diff · enter chat · tab painel · q sair"
-	case pChat:
-		help = "enter enviar · alt+enter nova linha · pgup/pgdn rolar · ctrl+n nova conversa · esc sair do chat"
-		if m.streaming {
-			help = "esc cancela a resposta · pgup/pgdn rolar"
-		}
-	}
-	return helpStyle.Render(truncateW(help, m.width))
+	room := m.width - lipgloss.Width(dock) - 1
+	left = truncateW(left, max(room, 1))
+	gap := max(m.width-lipgloss.Width(left)-lipgloss.Width(dock), 1)
+	return truncateW(left+strings.Repeat(" ", gap)+dock, m.width)
 }
 
-// ---- painel 1: commits ----
+func (m model) helpLine() string {
+	switch m.mode {
+	case modeMove:
+		return "setas/hjkl movem o painel · enter ou esc termina"
+	case modeResize:
+		return "→↓ aumentam · ←↑ diminuem · enter ou esc termina"
+	}
+	base := "ctrl+space comandos · alt+setas foco · "
+	switch m.focus {
+	case pLog:
+		return base + "↑↓ commit · r revisar · enter arquivos · q sair"
+	case pFiles:
+		return base + "↑↓ arquivo · r revisar · o editor · enter chat"
+	case pDiff:
+		return base + "↑↓ rolar · o editor · d diff · r revisar"
+	case pChat:
+		if m.streaming {
+			return "esc cancela a resposta · pgup/pgdn rolar"
+		}
+		return base + "enter envia · alt+enter quebra linha · ctrl+n nova conversa"
+	}
+	return base
+}
 
-func (m model) viewLog(w int) string {
-	var b strings.Builder
-	b.WriteString(m.paneTitle(1, "Commits", "", w) + "\n")
+// ---- painel: commits ----
+
+func (m model) viewLog(w, h int) string {
 	if m.rows == nil {
-		return b.String() + subtleStyle.Render("carregando…")
+		return subtleStyle.Render("carregando…")
 	}
 	if len(m.rows) == 0 {
-		return b.String() + subtleStyle.Render("Repositório sem commits.")
+		return subtleStyle.Render("Repositório sem commits.")
 	}
-	h := m.logHeight()
+	var b strings.Builder
 	end := min(m.logOff+h, len(m.rows))
 	for i := m.logOff; i < end; i++ {
 		r := m.rows[i]
@@ -257,21 +440,17 @@ func padTo(s string, w int) string {
 	return s
 }
 
-// ---- painel 2: arquivos + prévia ----
+// ---- painel: arquivos ----
 
-func (m model) viewFiles(w int) string {
-	var b strings.Builder
-	label := m.targetLabel()
-	b.WriteString(m.paneTitle(2, "Arquivos", label, w) + "\n")
-	lh := m.filesListHeight()
-	var lines []string
+func (m model) viewFiles(w, h int) string {
 	switch {
 	case m.files == nil:
-		lines = append(lines, subtleStyle.Render("carregando…"))
+		return subtleStyle.Render("carregando…")
 	case len(m.files) == 0:
-		lines = append(lines, subtleStyle.Render("nenhum arquivo alterado"))
+		return subtleStyle.Render("nenhum arquivo alterado")
 	}
-	end := min(m.fileOff+lh, len(m.files))
+	var lines []string
+	end := min(m.fileOff+h, len(m.files))
 	for i := m.fileOff; i < end; i++ {
 		f := m.files[i]
 		st, ok := statusStyle[f.Status]
@@ -293,36 +472,11 @@ func (m model) viewFiles(w int) string {
 		}
 		lines = append(lines, truncateW(line, w))
 	}
-	for len(lines) < lh {
-		lines = append(lines, "")
-	}
-	b.WriteString(strings.Join(lines, "\n") + "\n")
-	title := m.previewTitle
-	if title == "" {
-		title = "diff"
-	}
-	if m.previewIsDoc {
-		title = labelStyle.Render(title)
-	} else {
-		title = subtleStyle.Render(title)
-	}
-	sep := subtleStyle.Render("── ") + title + " "
-	b.WriteString(truncateW(sep+subtleStyle.Render(strings.Repeat("─", max(w-lipgloss.Width(sep), 0))), w) + "\n")
-	b.WriteString(m.preview.View())
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
-// ---- painel 3: chat ----
+// ---- painel: chat ----
 
 func (m model) viewChat(w int) string {
-	extra := ""
-	if m.modelName == "" {
-		extra = "sem modelo (m)"
-	}
-	var b strings.Builder
-	b.WriteString(m.paneTitle(3, "Chat", extra, w) + "\n")
-	b.WriteString(m.chatView.View() + "\n")
-	b.WriteString(subtleStyle.Render(strings.Repeat("─", w)) + "\n")
-	b.WriteString(m.input.View())
-	return b.String()
+	return m.chatView.View() + "\n" + subtleStyle.Render(strings.Repeat("─", w)) + "\n" + m.input.View()
 }

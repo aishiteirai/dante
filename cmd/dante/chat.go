@@ -169,9 +169,8 @@ func (m model) quickReview(path string) (tea.Model, tea.Cmd) {
 	if path != "" {
 		text = fmt.Sprintf("Revise as mudanças em `%s`: abra o arquivo, veja o diff e opine.", path)
 	}
-	m.focus = pChat
-	cmd := m.input.Focus()
-	nm, send := m.send(text)
+	fm, cmd := m.focusPane(pChat)
+	nm, send := fm.(model).send(text)
 	return nm, tea.Batch(cmd, send)
 }
 
@@ -299,17 +298,18 @@ func (m *model) showOpenedByModel(call llm.ToolCall, result string) {
 	for i, f := range m.files {
 		if f.Path == a.Path {
 			m.fileIdx = i
-			m.fileOff = scrollTo(i, m.fileOff, m.filesListHeight())
+			m.fileOff = scrollTo(i, m.fileOff, m.filesRows())
 			break
 		}
 	}
 	m.previewKey = "modelo"
-	title := "aberto pelo modelo · " + a.Path
+	title := "Documento · " + a.Path
 	if a.Ref != "" {
 		title += " @ " + shortSHA(a.Ref)
 	}
+	title += " (aberto pelo modelo)"
 	if call.Name == "git_diff" {
-		m.setPreview("diff visto pelo modelo · "+a.Path, result, false)
+		m.setPreview("Diff · "+a.Path+" (visto pelo modelo)", result, false)
 		return
 	}
 	m.setPreview(title, result, true)

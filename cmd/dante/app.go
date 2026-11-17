@@ -29,14 +29,6 @@ const (
 	scrKey                 // cadastrar a chave de API de um provedor
 )
 
-type pane int
-
-const (
-	pLog pane = iota
-	pFiles
-	pChat
-)
-
 var efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
 // Linha do painel de commits: as mudanças locais (worktree) ou uma linha do git log --graph.
@@ -98,7 +90,12 @@ type model struct {
 	filesFor string
 	fileIdx  int
 	fileOff  int
-	focus    pane
+	focus    paneID
+	lay      layout
+	rects    map[paneID]rect
+	zoom     bool
+	mode     int
+	drag     *dragState
 
 	preview      viewport.Model
 	previewTitle string
@@ -164,6 +161,7 @@ func newModel(cfg config.Config, repoFlag, modelFlag string) model {
 		chatView:  viewport.New(40, 10),
 		sendTo:    &target,
 		flagModel: modelFlag,
+		lay:       loadLayout(),
 	}
 	switch {
 	case repoFlag != "":
@@ -250,7 +248,7 @@ func loadDiff(r repo.Repo, target, path string) tea.Cmd {
 		if strings.TrimSpace(d) == "" {
 			d = "(sem diferenças de texto)"
 		}
-		return previewMsg{key: key, title: "diff · " + path, content: d}
+		return previewMsg{key: key, title: "Diff · " + path, content: d}
 	}
 }
 
@@ -408,6 +406,7 @@ func (m model) onRepoOpened(msg repoOpenedMsg) (tea.Model, tea.Cmd) {
 	m.logIdx, m.logOff, m.fileIdx, m.fileOff = 0, 0, 0, 0
 	m.target = repo.WorkTree
 	m.focus = pLog
+	m.mode = modeNormal
 	m.status = ""
 	m.resetChat()
 	cmds := []tea.Cmd{loadLog(m.repo)}
@@ -419,6 +418,7 @@ func (m model) onRepoOpened(msg repoOpenedMsg) (tea.Model, tea.Cmd) {
 		if p, ok := m.cfg.Provider(prov); ok && name != "" {
 			m.selectModel(p, name)
 			m.screen = scrMain
+			m.relayout()
 			return m, tea.Batch(cmds...)
 		}
 		m.setErr("--modelo deve ser provedor/modelo, ex.: deepseek/deepseek-chat")
@@ -508,59 +508,7 @@ func (m *model) previewSelected() tea.Cmd {
 	return loadDiff(m.repo, m.target, f.Path)
 }
 
-// ---- área de trabalho: teclas ----
-
-func (m model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
-	k, isKey := msg.(tea.KeyMsg)
-	if !isKey {
-		if m.focus == pChat {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
-		}
-		return m, nil
-	}
-	key := k.String()
-
-	switch key {
-	case "tab":
-		return m.setFocus((m.focus + 1) % 3)
-	case "shift+tab":
-		return m.setFocus((m.focus + 2) % 3)
-	}
-
-	if m.focus == pChat {
-		return m.updateChatKeys(k)
-	}
-	m.status = ""
-
-	switch key {
-	case "q":
-		return m, tea.Quit
-	case "1", "2", "3":
-		n, _ := strconv.Atoi(key)
-		return m.setFocus(pane(n - 1))
-	case "m":
-		m.screen = scrModel
-		return m, tea.Batch(m.enterModelScreen()...)
-	case "u":
-		return m, tea.Batch(loadLog(m.repo), m.reloadFilesIfWorktree())
-	}
-
-	if m.focus == pLog {
-		return m.updateLogKeys(key)
-	}
-	return m.updateFilesKeys(key)
-}
-
-func (m model) setFocus(p pane) (tea.Model, tea.Cmd) {
-	m.focus = p
-	if p == pChat {
-		return m, m.input.Focus()
-	}
-	m.input.Blur()
-	return m, nil
-}
+// ---- área de trabalho: teclas dos painéis ----
 
 func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
 	moved := false
@@ -595,7 +543,7 @@ func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
 		if i := m.nextSelectable(len(m.rows), -1); i >= 0 {
 			m.logIdx, moved = i, true
 		}
-	case "enter", "right", "l":
+	case "enter":
 		return m.setFocus(pFiles)
 	case "r":
 		return m.quickReview("")
@@ -611,7 +559,7 @@ func (m model) updateFilesKeys(key string) (tea.Model, tea.Cmd) {
 	n := len(m.files)
 	prev := m.fileIdx
 	switch key {
-	case "esc", "left", "h":
+	case "esc":
 		return m.setFocus(pLog)
 	case "up", "k":
 		m.fileIdx = max(m.fileIdx-1, 0)
@@ -623,7 +571,7 @@ func (m model) updateFilesKeys(key string) (tea.Model, tea.Cmd) {
 	case "K", "ctrl+u", "pgup":
 		m.preview.HalfPageUp()
 		return m, nil
-	case "enter", "right", "l":
+	case "enter":
 		return m.setFocus(pChat)
 	case "r":
 		if n > 0 {
@@ -642,7 +590,7 @@ func (m model) updateFilesKeys(key string) (tea.Model, tea.Cmd) {
 		// Volta do documento aberto pelo modelo para o diff.
 		return m, m.previewSelected()
 	}
-	m.fileOff = scrollTo(m.fileIdx, m.fileOff, m.filesListHeight())
+	m.fileOff = scrollTo(m.fileIdx, m.fileOff, m.filesRows())
 	if m.fileIdx != prev {
 		return m, m.previewSelected()
 	}

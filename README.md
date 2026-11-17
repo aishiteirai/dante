@@ -5,15 +5,17 @@ conversa com um modelo, que abre os arquivos e opina sobre as mudanças. Funcion
 **Claude**, **DeepSeek**, **Qwen** e modelos locais (**Ollama**, **LM Studio**).
 
 ```
-dante · meu-app (main)                                         DeepSeek · deepseek-chat · 3.1k tokens
-╭ [1] Commits ──────────────╮╭ [2] Arquivos 6f1940f ──────────╮╭ [3] Chat ─────────────────────────╮
-│ ● Mudanças locais (2)     ││ A util.py              +11 -0  ││ você                              │
-│ * 6f1940f (HEAD→main) …   ││ M db.py                 +5 -1  ││ Revise as mudanças em util.py     │
-│ * 91586aa busca por nome  ││ ── aberto pelo modelo ──────── ││                                   │
-│ * 28abf76 base            ││   10  def caminho_upload(…     ││ deepseek-chat                     │
-│                           ││   11      return os.path.join… ││   ✓ abriu util.py                 │
-│                           ││                                ││ ### 1. Path traversal — util.py:11│
-╰───────────────────────────╯╰────────────────────────────────╯╰───────────────────────────────────╯
+dante · meu-app (main)                                          DeepSeek · deepseek-chat · 3.1k tokens
+╭─ [1] Commits ───────────╮╭─ [3] Documento · util.py (aberto pelo modelo) ─╮╭─ [4] Chat ──────────────╮
+│ ● Mudanças locais (2)   ││    10  def caminho_upload(base, nome):         ││ você                    │
+│ * 6f1940f (HEAD→main) … ││    11      return os.path.join(base, nome)     ││ Revise util.py          │
+│ * 91586aa busca por nome││                                                ││                         │
+╰─────────────────────────╯│                                                ││ deepseek-chat           │
+╭─ [2] Arquivos 6f1940f ──╮│                                                ││   ✓ abriu util.py       │
+│ A util.py        +11 -0 ││                                                ││ 1. Path traversal …     │
+│ M db.py           +5 -1 ││                                                ││ › _                     │
+╰─────────────────────────╯╰────────────────────────────────────────────────╯╰─────────────────────────╯
+ctrl+space comandos · alt+setas foco · ↑↓ arquivo · r revisar · o editor           ▾ minimizados
 ```
 
 ## Instalação
@@ -133,22 +135,49 @@ dante
    - uma URL do git (é clonada em `~/.local/share/dante/repos/`);
    - o atalho `dono/repo` do GitHub.
 2. **Modelo.** Escolha quem vai revisar. A escolha fica salva para a próxima vez.
-3. **Área de trabalho**, com três painéis:
-   - **Commits:** o histórico com o grafo, como no lazygit. As mudanças não commitadas
-     aparecem no topo.
-   - **Arquivos:** o que mudou no commit escolhido e o diff do arquivo selecionado.
-   - **Chat:** converse com o modelo. Cada mensagem leva junto o contexto, ou seja, o commit
-     e o arquivo em foco. O modelo abre os arquivos sozinho, e o painel do meio mostra o
-     documento que ele está lendo.
+3. **Área de trabalho.** São quatro painéis:
+   - **[1] Commits:** o histórico com o grafo. As mudanças não commitadas aparecem no topo.
+   - **[2] Arquivos:** o que mudou no commit escolhido.
+   - **[3] Diff:** o diff do arquivo selecionado. Quando o modelo abre um arquivo, este
+     painel mostra o documento que ele está lendo.
+   - **[4] Chat:** a conversa com o modelo. Cada mensagem leva junto o contexto, ou seja, o
+     commit e o arquivo em foco.
+
+### Organizar os painéis
+
+Os painéis funcionam como no [noct](https://github.com/AlexandreSJ/noct) e no i3: ficam em
+colunas, o foco anda pelas setas para o painel daquele lado, e o layout é salvo em
+`~/.config/dante/layout.json`.
+
+`Ctrl+Space` abre o popup de comandos. As mesmas teclas também funcionam direto com `Alt`,
+inclusive enquanto você digita no chat:
+
+| Tecla (depois de `Ctrl+Space`, ou com `Alt`) | O que faz |
+|---|---|
+| `←↑↓→` / `hjkl` | foco no painel ao lado (`Ctrl+Space` continua aberto para andar mais) |
+| `a`, depois as setas | move o painel: entre colunas com `←→`, dentro da coluna com `↑↓`; na borda, vira uma coluna nova (`Alt+Shift+setas` move direto) |
+| `n`, depois as setas | redimensiona: `→↓` aumentam, `←↑` diminuem |
+| `w` | empilha a coluna: só o painel com foco fica aberto, e os outros viram uma linha `▸ título` (de novo, separa) |
+| `f` | tela cheia; as setas continuam passando pelos painéis |
+| `z` | minimiza o painel para a barra de baixo (`▾ [3] Diff`) |
+| `1` `2` `3` `4` | vai para o painel e o restaura se estiver minimizado |
+| `0` | volta ao layout padrão |
+| `m` / `o` / `u` / `q` | modelo / outro repositório / atualizar / sair |
+
+Com o mouse: clique dá foco, a roda rola o painel embaixo dela e arrastar a borda entre dois
+painéis redimensiona. Para selecionar texto com o mouse capturado, segure `Shift` (na maioria
+dos terminais), ou abra com `dante --sem-mouse`.
+
+Teclas de cada painel (fora do chat): `Tab` passa para o próximo painel e `q` sai.
 
 | Painel | Teclas |
 |---|---|
-| Qualquer | `tab`/`shift+tab` ou `1` `2` `3` troca de painel · `m` modelo · `u` atualiza · `q` sai |
 | Commits | `↑↓` escolhe · `r` revisa o alvo inteiro · `enter` vai para os arquivos · `esc` troca de repositório |
-| Arquivos | `↑↓` escolhe · `J`/`K` rola o diff · `r` revisa o arquivo · `o` abre no `$EDITOR` · `d` volta ao diff |
-| Chat | `enter` envia · `alt+enter` nova linha · `pgup`/`pgdn` rola · `ctrl+n` nova conversa · `esc` cancela a resposta |
+| Arquivos | `↑↓` escolhe · `r` revisa o arquivo · `o` abre no `$EDITOR` · `d` volta ao diff · `enter` vai para o chat |
+| Diff | `↑↓` `PgUp` `PgDn` `g` `G` rolam · `o` abre no editor · `d` volta ao diff |
+| Chat | `enter` envia · `alt+enter` quebra linha · `PgUp`/`PgDn` rolam · `ctrl+n` nova conversa · `esc` cancela a resposta |
 
-Em terminais estreitos (menos de 110 colunas), aparece um painel por vez.
+Em terminais com menos de 80 colunas, aparece um painel por vez, com as abas no topo.
 
 Opções: `dante --repo CAMINHO_OU_URL` abre direto o repositório, e
 `dante --modelo deepseek/deepseek-chat` pula a escolha do modelo.
@@ -170,12 +199,15 @@ junto com as instruções do modelo. Há um modelo em `exemplos/diretrizes.md`.
 ```
 ~/.config/dante/config.json       provedores, último modelo, repositórios confiados
 ~/.config/dante/credenciais.json  chaves de API cadastradas no dante (permissão 600)
+~/.config/dante/layout.json       organização dos painéis
 ~/.local/share/dante/conversas/   conversas salvas em markdown, por repositório
 ~/.local/share/dante/repos/       clones feitos a partir de URLs
 ```
 
 ## Próximos passos
 
+- Addon do noct: o dante continua independente, mas também poderá rodar como mod do noct
+  (veja `CLAUDE.md`).
 - Editar arquivos dentro do dante e salvar.
 - Pedir melhorias ao agente: ferramentas de escrita, com confirmação antes de aplicar.
 
