@@ -105,3 +105,45 @@ func stripANSI(s string) string {
 	}
 	return b.String()
 }
+
+func TestFluxoDaChave(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	cfg, _ := config.Load()
+	m := newModel(cfg, "", "")
+	m.repo = repo.Repo{Root: t.TempDir()}
+	m.screen = scrModel
+	m.enterModelScreen()
+	for i, r := range m.modelRows { // escolhe deepseek-chat, que está sem chave
+		if r.model == "deepseek-chat" {
+			m.modelIdx = i
+		}
+	}
+	nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = nm.(model)
+	if m.screen != scrKey || m.keyProv.ID != "deepseek" || m.keyThen == nil {
+		t.Fatalf("esperava a tela de chave; tela=%d", m.screen)
+	}
+	nm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("sk-teste-123456")})
+	m = nm.(model)
+	if strings.Contains(m.View(), "sk-teste") {
+		t.Fatal("a chave deveria ficar oculta")
+	}
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = nm.(model)
+	if !m.keyChecking || cmd == nil {
+		t.Fatal("deveria testar a chave")
+	}
+	// Provedor recusa: continua na tela com erro.
+	nm, _ = m.Update(keyCheckedMsg{provID: "deepseek", key: "sk-teste-123456", err: llm.ErrInvalidKey})
+	m = nm.(model)
+	if m.screen != scrKey || m.keyErr == "" {
+		t.Fatal("deveria mostrar o erro")
+	}
+	// Chave aceita: salva, escolhe o modelo e abre a área de trabalho.
+	nm, _ = m.Update(keyCheckedMsg{provID: "deepseek", key: "sk-teste-123456"})
+	m = nm.(model)
+	if m.screen != scrMain || m.modelName != "deepseek-chat" || m.prov.LLM().Key() != "sk-teste-123456" {
+		t.Fatalf("depois de salvar: tela=%d modelo=%s", m.screen, m.modelName)
+	}
+}

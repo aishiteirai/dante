@@ -179,3 +179,30 @@ func TestOpenAIToolLoop(t *testing.T) {
 		t.Fatal("mensagem com erro deveria sair do histórico")
 	}
 }
+
+func TestCheckKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Header.Get("Authorization") + r.Header.Get("X-Api-Key") {
+		case "Bearer boa", "boa":
+			fmt.Fprint(w, `{"data":[]}`)
+		default:
+			w.WriteHeader(401)
+			fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`)
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	for _, kind := range []Kind{KindOpenAI, KindAnthropic} {
+		if err := CheckKey(ctx, Provider{Kind: kind, BaseURL: srv.URL, APIKey: "boa"}); err != nil {
+			t.Errorf("%s chave boa: %v", kind, err)
+		}
+		if err := CheckKey(ctx, Provider{Kind: kind, BaseURL: srv.URL, APIKey: "ruim"}); err != ErrInvalidKey {
+			t.Errorf("%s chave ruim: %v", kind, err)
+		}
+	}
+	// Servidor fora do ar: erro, mas não "chave inválida".
+	if err := CheckKey(ctx, Provider{Kind: KindOpenAI, BaseURL: "http://127.0.0.1:1", APIKey: "x"}); err == nil || err == ErrInvalidKey {
+		t.Errorf("fora do ar: %v", err)
+	}
+}

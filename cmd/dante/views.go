@@ -23,6 +23,8 @@ func (m model) View() string {
 		return m.viewRepo()
 	case scrModel:
 		return m.viewModel()
+	case scrKey:
+		return m.viewKey()
 	}
 	return m.viewMain()
 }

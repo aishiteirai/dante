@@ -81,7 +81,7 @@ func (m *model) selectModel(p config.Provider, name string) {
 	_ = m.cfg.Save()
 	m.resetChat()
 	if !p.HasKey() {
-		m.setErr(fmt.Sprintf("%s sem chave: defina %s antes de enviar", p.Nome, p.ChaveEnv))
+		m.setErr(fmt.Sprintf("%s sem chave: pressione m e depois c para cadastrar", p.Nome))
 	}
 }
 
@@ -384,6 +384,9 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 	default:
 		m.entries = append(m.entries, entry{kind: eError, text: msg.err.Error()})
+		if strings.Contains(msg.err.Error(), "chave") {
+			m.setErr("problema com a chave: pressione m e depois c para cadastrar outra")
+		}
 	}
 	m.refreshChat()
 	m.chatView.GotoBottom()

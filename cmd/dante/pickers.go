@@ -226,10 +226,19 @@ func (m *model) buildModelRows() {
 			} else {
 				h.note = "procurando…"
 			}
-		case p.HasKey():
-			h.note, h.ok = "chave encontrada", true
 		default:
-			h.note = "defina " + p.ChaveEnv
+			switch p.KeySource() {
+			case "dante":
+				h.note, h.ok = "chave salva no dante", true
+			case "env":
+				h.note, h.ok = "chave de "+p.ChaveEnv, true
+			case "config":
+				h.note, h.ok = "chave no config.json", true
+			case "ant":
+				h.note, h.ok = "login do ant", true
+			default:
+				h.note = "sem chave · c para adicionar"
+			}
 		}
 		rows = append(rows, h)
 		for _, md := range models {
@@ -302,11 +311,22 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.toRepoScreen()
 	case "q":
 		return m, tea.Quit
+	case "c":
+		if m.modelIdx >= 0 && m.modelIdx < len(m.modelRows) {
+			return m.openKeyScreen(m.modelRows[m.modelIdx].prov, nil)
+		}
+	case "x":
+		if m.modelIdx >= 0 && m.modelIdx < len(m.modelRows) {
+			return m.removeKey(m.modelRows[m.modelIdx].prov)
+		}
 	case "enter":
 		if m.modelIdx < 0 || m.modelIdx >= len(m.modelRows) {
 			return m, nil
 		}
 		r := m.modelRows[m.modelIdx]
+		if !r.prov.HasKey() { // pede a chave antes de usar o modelo
+			return m.openKeyScreen(r.prov, &r)
+		}
 		if r.prov.ID != m.prov.ID || r.model != m.modelName || m.chat == nil {
 			m.selectModel(r.prov, r.model)
 		}
@@ -356,9 +376,13 @@ func (m model) viewModel() string {
 		}
 	}
 	if m.status != "" {
-		b.WriteString("\n" + errStyle.Render(truncateW(m.status, w)) + "\n")
+		st := okStyle
+		if m.statusErr {
+			st = errStyle
+		}
+		b.WriteString("\n" + st.Render(truncateW(m.status, w)) + "\n")
 	}
 	b.WriteString("\n" + subtleStyle.Render(truncateW("Provedores e modelos: "+prettyPath(config.Path()), w)) + "\n")
-	b.WriteString(helpStyle.Render("↑↓ escolher · enter usar · e esforço · esc voltar · q sair"))
+	b.WriteString(helpStyle.Render("↑↓ escolher · enter usar · c chave do provedor · x remover chave · e esforço · esc voltar"))
 	return m.center(boxStyle.Width(w + 6).Render(b.String()))
 }

@@ -37,18 +37,36 @@ instalado.
 
 ## Modelos
 
-Defina a chave do provedor que for usar:
+### Conectar a API de um provedor
 
-| Provedor | Variável | Modelos sugeridos |
-|---|---|---|
-| Claude (Anthropic) | `ANTHROPIC_API_KEY` | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` |
-| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat`, `deepseek-reasoner` |
-| Qwen (Alibaba Cloud) | `DASHSCOPE_API_KEY` | `qwen3-coder-plus`, `qwen-max`, `qwen-plus` |
-| Ollama (local) | — | os que você baixou (`ollama pull qwen2.5-coder`) |
-| LM Studio (local) | — | os carregados no LM Studio |
+O jeito mais simples é cadastrar a chave pelo próprio dante:
 
-Os servidores locais são detectados sozinhos, e seus modelos aparecem na lista. Para rodar
-DeepSeek ou Qwen de graça na sua máquina:
+1. Abra o `dante` e vá até a tela de modelos (ela aparece ao abrir um repositório, ou com a
+   tecla `m`).
+2. Escolha um modelo do provedor e pressione `enter`. Se o provedor ainda não tiver chave, o
+   dante pede a chave. Para cadastrar ou trocar a chave a qualquer momento, pressione `c` sobre
+   o provedor.
+3. Cole a chave e pressione `enter`. O dante testa a chave com o provedor, sem gastar tokens,
+   e a salva.
+
+| Provedor | Onde gerar a chave |
+|---|---|
+| Claude (Anthropic) | https://platform.claude.com/settings/keys |
+| DeepSeek | https://platform.deepseek.com/api_keys |
+| Qwen (Alibaba Cloud) | Alibaba Cloud Model Studio → API Key |
+
+As chaves ficam em `~/.config/dante/credenciais.json`, um arquivo separado do `config.json`
+e legível só pelo seu usuário (permissão 600). Na tela de modelos, cada provedor mostra de
+onde vem a chave em uso. `x` remove a chave salva no dante.
+
+Também dá para usar variáveis de ambiente, como antes: `ANTHROPIC_API_KEY`,
+`DEEPSEEK_API_KEY` ou `DASHSCOPE_API_KEY`. Quando há as duas, a chave salva no dante tem
+prioridade.
+
+### Modelos locais
+
+Ollama e LM Studio não precisam de chave. Eles são detectados sozinhos, e seus modelos
+aparecem na lista. Para rodar DeepSeek ou Qwen de graça na sua máquina:
 
 ```bash
 ollama pull qwen2.5-coder:14b    # ou deepseek-coder-v2, qwen3-coder...
@@ -71,7 +89,8 @@ Exemplo:
  "modelos": ["qwen/qwen3-coder", "deepseek/deepseek-chat-v3.1"]}
 ```
 
-Para servidores locais, use `"listar_modelos": true, "local": true` no lugar de `chave_env`.
+O `chave_env` é opcional: um provedor novo também recebe a chave pela tecla `c`. Para
+servidores locais, use `"listar_modelos": true, "local": true`.
 
 No Claude, o esforço (`low` a `max`) controla a profundidade da análise. Ele muda com a tecla
 `e` na tela de modelos. Nos modelos da Anthropic que aceitam, o dante também ativa o
@@ -125,6 +144,7 @@ junto com as instruções do modelo. Há um modelo em `exemplos/diretrizes.md`.
 
 ```
 ~/.config/dante/config.json       provedores, último modelo, repositórios confiados
+~/.config/dante/credenciais.json  chaves de API cadastradas no dante (permissão 600)
 ~/.local/share/dante/conversas/   conversas salvas em markdown, por repositório
 ~/.local/share/dante/repos/       clones feitos a partir de URLs
 ```

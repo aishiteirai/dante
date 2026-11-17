@@ -26,6 +26,7 @@ const (
 	scrRepo                // digitar outro repositório
 	scrModel               // escolher o modelo
 	scrMain                // área de trabalho: commits | arquivos | chat
+	scrKey                 // cadastrar a chave de API de um provedor
 )
 
 type pane int
@@ -72,6 +73,15 @@ type model struct {
 	modelWant *config.Choice
 	listed    map[string][]string
 	listErr   map[string]string
+
+	// cadastro de chave
+	keyProv       config.Provider
+	keyThen       *modelRow
+	keyInput      textinput.Model
+	keyChecking   bool
+	keyErr        string
+	keyWarn       string
+	keyUnverified string
 
 	// área de trabalho
 	repo     repo.Repo
@@ -278,7 +288,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case spinner.TickMsg:
-		if m.opening || m.streaming {
+		if m.opening || m.streaming || m.keyChecking {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 			if m.streaming {
@@ -290,6 +300,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case repoOpenedMsg:
 		return m.onRepoOpened(msg)
+
+	case keyCheckedMsg:
+		return m.onKeyChecked(msg)
 
 	case modelsListedMsg:
 		if msg.err != nil {
@@ -352,6 +365,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateModel(msg)
 	case scrMain:
 		return m.updateMain(msg)
+	case scrKey:
+		return m.updateKey(msg)
 	}
 	return m, nil
 }
