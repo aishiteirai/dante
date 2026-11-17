@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aishiteirai/dante/internal/repo"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -141,7 +142,7 @@ func openRepo(input string) tea.Cmd {
 				}
 				// pull falhou (ex.: sem rede) mas o clone existe: segue com o que há.
 			}
-			root, err := repoRoot(dest)
+			root, err := repo.Root(dest)
 			return repoOpenedMsg{root: root, cloned: url, err: err}
 		}
 		path := expandHome(in)
@@ -151,7 +152,7 @@ func openRepo(input string) tea.Cmd {
 		if st, err := os.Stat(path); err != nil || !st.IsDir() {
 			return repoOpenedMsg{err: fmt.Errorf("pasta não encontrada: %s", in)}
 		}
-		root, err := repoRoot(path)
+		root, err := repo.Root(path)
 		return repoOpenedMsg{root: root, err: err}
 	}
 }
@@ -200,61 +201,4 @@ func completePath(in string) (string, []string) {
 func isDir(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
-}
-
-// ---- Informações da área de trabalho ----
-
-type workspaceInfo struct {
-	Branch     string
-	Upstream   string
-	Ahead      string
-	LastCommit string
-	Staged     int
-	Unstaged   int
-	Untracked  int
-	Commits    string
-}
-
-type workspaceMsg struct {
-	root string
-	info workspaceInfo
-}
-
-func loadWorkspace(root string) tea.Cmd {
-	return func() tea.Msg {
-		var w workspaceInfo
-		run := func(args ...string) string {
-			out, _ := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
-			return strings.TrimSpace(string(out))
-		}
-		for i, line := range strings.Split(run("status", "--porcelain=v1", "-b"), "\n") {
-			if i == 0 && strings.HasPrefix(line, "## ") {
-				h := strings.TrimPrefix(line, "## ")
-				if j := strings.Index(h, " ["); j >= 0 {
-					w.Ahead = strings.Trim(h[j+1:], "[]")
-					h = h[:j]
-				}
-				w.Branch, w.Upstream, _ = strings.Cut(h, "...")
-				w.Branch = strings.TrimPrefix(w.Branch, "No commits yet on ")
-				continue
-			}
-			if len(line) < 2 {
-				continue
-			}
-			switch {
-			case line[:2] == "??":
-				w.Untracked++
-			default:
-				if line[0] != ' ' {
-					w.Staged++
-				}
-				if line[1] != ' ' {
-					w.Unstaged++
-				}
-			}
-		}
-		w.LastCommit = run("log", "-1", "--format=%h %s · %an, %ar")
-		w.Commits = run("rev-list", "--count", "HEAD")
-		return workspaceMsg{root: root, info: w}
-	}
 }

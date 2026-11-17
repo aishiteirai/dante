@@ -1,74 +1,40 @@
-// dante: revisor de código para o terminal.
-//
-// Executa o harness Python (`python -m revisor ... --eventos`) e mostra o progresso
-// e os achados de forma interativa.
+// dante: revisor de código para o terminal, com modelos Claude, DeepSeek, Qwen ou locais.
 package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
+	"github.com/aishiteirai/dante/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-// Python padrão; o Makefile troca pelo do .venv com -ldflags "-X main.defaultPython=...".
-var defaultPython = "python3"
-
 func main() {
-	cfg := Config{}
-	flag.StringVar(&cfg.Repo, "repo", "", "abre direto este repositório (caminho ou URL), sem a tela inicial")
-	flag.StringVar(&cfg.Python, "python", envOr("REVISOR_PYTHON", defaultPython), "interpretador Python com o pacote `revisor` instalado (env REVISOR_PYTHON)")
-	flag.StringVar(&cfg.Effort, "esforco", envOr("REVISOR_ESFORCO", "high"), "esforço inicial: low, medium, high, xhigh, max")
-	flag.StringVar(&cfg.Budget, "orcamento", os.Getenv("REVISOR_ORCAMENTO"), "teto de custo em US$ por revisão")
-	modelo := flag.String("modelo", os.Getenv("REVISOR_MODELO"), "modelo (padrão do harness: claude-opus-5-5)")
-	diretrizes := flag.String("diretrizes", "", "arquivo de diretrizes do time")
+	repoFlag := flag.String("repo", "", "abre direto este repositório (caminho, URL ou dono/repo), sem a tela inicial")
+	modelFlag := flag.String("modelo", "", "usa este modelo sem perguntar, como provedor/modelo (ex.: deepseek/deepseek-chat)")
+	effort := flag.String("esforco", "", "esforço do Claude: low, medium, high, xhigh, max")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Uso: dante [opções]\n\nRevisor de código para o terminal. Ao abrir, pergunta qual repositório revisar.\n\n")
+		fmt.Fprintf(os.Stderr, "Uso: dante [opções]\n\nRevisor de código para o terminal.\n"+
+			"Ao abrir, pergunta qual repositório revisar e qual modelo usar.\n\n")
 		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nConfiguração de provedores e modelos: %s\n", config.Path())
 	}
 	flag.Parse()
 
-	if *modelo != "" {
-		cfg.Extra = append(cfg.Extra, "--modelo", *modelo)
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Aviso: não consegui ler %s (%v); usando os padrões.\n", config.Path(), err)
 	}
-	if *diretrizes != "" {
-		abs, _ := filepath.Abs(*diretrizes)
-		cfg.Extra = append(cfg.Extra, "--diretrizes", abs)
+	if *effort != "" {
+		cfg.Esforco = *effort
 	}
+	darkBg = lipgloss.HasDarkBackground()
 
-	if err := exec.Command(cfg.Python, "-c", "import revisor").Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Erro: o pacote `revisor` não foi encontrado em %q.\n"+
-			"Rode `make install` na raiz do projeto, ou aponte --python / REVISOR_PYTHON para o Python do .venv.\n", cfg.Python)
-		os.Exit(2)
-	}
-
-	p := tea.NewProgram(newModel(cfg), tea.WithAltScreen())
+	p := tea.NewProgram(newModel(cfg, *repoFlag, *modelFlag), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "Erro:", err)
 		os.Exit(1)
 	}
-}
-
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-// Base padrão: a branch para onde origin/HEAD aponta; senão main ou master.
-func defaultBase(repo string) string {
-	if out, err := exec.Command("git", "-C", repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").Output(); err == nil {
-		return strings.TrimSpace(string(out))
-	}
-	for _, b := range []string{"main", "master"} {
-		if exec.Command("git", "-C", repo, "rev-parse", "--verify", "-q", b).Run() == nil {
-			return b
-		}
-	}
-	return "main"
 }

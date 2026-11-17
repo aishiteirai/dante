@@ -1,0 +1,313 @@
+package llm
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+)
+
+// Cliente para APIs compatíveis com o Chat Completions da OpenAI: DeepSeek, Qwen
+// (DashScope), Ollama, LM Studio, vLLM, OpenRouter...
+
+type oaMessage struct {
+	Role             string       `json:"role"`
+	Content          *string      `json:"content"`
+	ReasoningContent string       `json:"reasoning_content,omitempty"`
+	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string       `json:"tool_call_id,omitempty"`
+}
+
+type oaToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type oaTool struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Parameters  map[string]any `json:"parameters"`
+	} `json:"function"`
+}
+
+type oaChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
+			Reasoning        string `json:"reasoning"` // Ollama/OpenRouter
+			ToolCalls        []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int64 `json:"prompt_tokens"`
+		CompletionTokens int64 `json:"completion_tokens"`
+	} `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+type openAIChat struct {
+	p        Provider
+	opts     Options
+	http     *http.Client
+	tools    []oaTool
+	messages []oaMessage
+}
+
+func newOpenAI(p Provider, o Options) *openAIChat {
+	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}}
+	if o.System != "" {
+		c.messages = append(c.messages, oaMessage{Role: "system", Content: ptr(o.System)})
+	}
+	for _, t := range o.Tools {
+		var ot oaTool
+		ot.Type = "function"
+		ot.Function.Name, ot.Function.Description, ot.Function.Parameters = t.Name, t.Description, t.Params
+		c.tools = append(c.tools, ot)
+	}
+	return c
+}
+
+func ptr(s string) *string { return &s }
+
+func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (Usage, error) {
+	var usage Usage
+	start := len(c.messages)
+	c.messages = append(c.messages, oaMessage{Role: "user", Content: ptr(user)})
+	fail := func(err error) (Usage, error) {
+		c.messages = c.messages[:start]
+		return usage, err
+	}
+
+	for step := 0; step < c.opts.MaxSteps; step++ {
+		msg, finish, u, err := c.complete(ctx, emit)
+		usage.InputTokens += u.InputTokens
+		usage.OutputTokens += u.OutputTokens
+		if err != nil {
+			return fail(err)
+		}
+		c.messages = append(c.messages, msg)
+		if len(msg.ToolCalls) == 0 {
+			if finish == "length" {
+				emit(Event{Kind: EvNotice, Text: "resposta cortada no limite de tokens", IsError: true})
+			}
+			return usage, nil
+		}
+		for _, tc := range msg.ToolCalls {
+			call := ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: tc.Function.Arguments}
+			emit(Event{Kind: EvToolCall, Call: call})
+			out, isErr := c.opts.Exec(ctx, call)
+			emit(Event{Kind: EvToolResult, Call: call, Text: out, IsError: isErr})
+			if isErr {
+				out = "ERRO: " + out
+			}
+			c.messages = append(c.messages, oaMessage{Role: "tool", ToolCallID: tc.ID, Content: ptr(out)})
+		}
+		if ctx.Err() != nil {
+			return fail(ctx.Err())
+		}
+	}
+	emit(Event{Kind: EvNotice, Text: fmt.Sprintf("parei após %d rodadas de ferramentas", c.opts.MaxSteps), IsError: true})
+	return usage, nil
+}
+
+// complete faz uma requisição em streaming e devolve a mensagem do assistente montada.
+func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage, string, Usage, error) {
+	var usage Usage
+	body := map[string]any{
+		"model":          c.opts.Model,
+		"messages":       c.messages,
+		"stream":         true,
+		"stream_options": map[string]any{"include_usage": true},
+	}
+	if len(c.tools) > 0 {
+		body["tools"] = c.tools
+	}
+	if c.opts.MaxTokens > 0 {
+		body["max_tokens"] = c.opts.MaxTokens
+	}
+	buf, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(c.p.BaseURL, "/")+"/chat/completions", bytes.NewReader(buf))
+	if err != nil {
+		return oaMessage{}, "", usage, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if k := c.p.Key(); k != "" {
+		req.Header.Set("Authorization", "Bearer "+k)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return oaMessage{}, "", usage, fmt.Errorf("não consegui conectar em %s: %w", c.p.BaseURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return oaMessage{}, "", usage, httpError(resp.StatusCode, b, c.p)
+	}
+
+	var content, reasoning strings.Builder
+	type partial struct{ id, name, args strings.Builder }
+	calls := map[int]*partial{}
+	finish := ""
+
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		var ch oaChunk
+		if err := json.Unmarshal([]byte(data), &ch); err != nil {
+			continue
+		}
+		if ch.Error != nil {
+			return oaMessage{}, "", usage, fmt.Errorf("erro do provedor: %s", ch.Error.Message)
+		}
+		if ch.Usage != nil {
+			usage = Usage{InputTokens: ch.Usage.PromptTokens, OutputTokens: ch.Usage.CompletionTokens}
+		}
+		for _, choice := range ch.Choices {
+			d := choice.Delta
+			if d.Content != "" {
+				content.WriteString(d.Content)
+				emit(Event{Kind: EvText, Text: d.Content})
+			}
+			if r := d.ReasoningContent + d.Reasoning; r != "" {
+				reasoning.WriteString(r)
+				emit(Event{Kind: EvReasoning, Text: r})
+			}
+			for _, tc := range d.ToolCalls {
+				p := calls[tc.Index]
+				if p == nil {
+					p = &partial{}
+					calls[tc.Index] = p
+				}
+				p.id.WriteString(tc.ID)
+				p.name.WriteString(tc.Function.Name)
+				p.args.WriteString(tc.Function.Arguments)
+			}
+			if choice.FinishReason != "" {
+				finish = choice.FinishReason
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return oaMessage{}, "", usage, err
+	}
+
+	msg := oaMessage{Role: "assistant", ReasoningContent: reasoning.String()}
+	if content.Len() > 0 || len(calls) == 0 {
+		msg.Content = ptr(content.String())
+	}
+	idx := make([]int, 0, len(calls))
+	for i := range calls {
+		idx = append(idx, i)
+	}
+	sort.Ints(idx)
+	for n, i := range idx {
+		p := calls[i]
+		var tc oaToolCall
+		tc.ID, tc.Type = p.id.String(), "function"
+		if tc.ID == "" { // alguns servidores locais não mandam id
+			tc.ID = fmt.Sprintf("call_%d_%d", len(c.messages), n)
+		}
+		tc.Function.Name = p.name.String()
+		tc.Function.Arguments = p.args.String()
+		if tc.Function.Arguments == "" {
+			tc.Function.Arguments = "{}"
+		}
+		msg.ToolCalls = append(msg.ToolCalls, tc)
+	}
+	return msg, finish, usage, nil
+}
+
+func httpError(status int, body []byte, p Provider) error {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &e)
+	msg := e.Error.Message
+	if msg == "" {
+		msg = e.Message
+	}
+	if msg == "" {
+		msg = strings.TrimSpace(string(body))
+	}
+	switch status {
+	case 401, 403:
+		hint := ""
+		if p.APIKeyEnv != "" {
+			hint = fmt.Sprintf(" (defina %s)", p.APIKeyEnv)
+		}
+		return fmt.Errorf("chave de API recusada pelo provedor%s: %s", hint, msg)
+	case 404:
+		return fmt.Errorf("modelo ou endpoint não encontrado: %s", msg)
+	case 429:
+		return fmt.Errorf("limite de requisições atingido: %s", msg)
+	}
+	return fmt.Errorf("HTTP %d: %s", status, msg)
+}
+
+// ListModels consulta GET /models (Ollama, LM Studio, vLLM...).
+func ListModels(ctx context.Context, p Provider) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(p.BaseURL, "/")+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if k := p.Key(); k != "" {
+		req.Header.Set("Authorization", "Bearer "+k)
+	}
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, d := range out.Data {
+		ids = append(ids, d.ID)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
