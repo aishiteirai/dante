@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/aishiteirai/dante/internal/config"
-	"github.com/aishiteirai/dante/internal/llm"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
