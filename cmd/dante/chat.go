@@ -121,7 +121,7 @@ func (m *model) ensureChat() error {
 		Exec:   m.repo.Executor(func() string { return *sendTo }),
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
-		ContextTokens: m.prov.Contexto,
+		ContextTokens: m.effectiveContext(),
 		TurnBudget:    m.cfg.TurnBudget(),
 	})
 	if err != nil {
@@ -186,12 +186,21 @@ func (m model) quickReview(path string) (tea.Model, tea.Cmd) {
 // Diffs maiores que isto não vão na mensagem; o modelo pede por arquivo.
 const maxInlineDiff = 60_000
 
-// effectiveContext é o contexto do modelo em tokens (0 = grande o bastante para não limitar).
+// Contexto assumido para provedores sem "contexto" no config.json (ex.: um provedor
+// compatível com OpenAI que o usuário acrescentou). Conservador: a maioria dos modelos
+// atuais tem pelo menos isso.
+const defaultContextTokens = 64000
+
+// effectiveContext é o contexto do modelo em tokens. No Claude, 0: o servidor cuida dos
+// limites (limpeza de contexto) e a janela é de 1 milhão.
 func (m model) effectiveContext() int {
-	if m.prov.Contexto > 0 {
+	switch {
+	case m.prov.Contexto > 0:
 		return m.prov.Contexto
+	case m.prov.Tipo == llm.KindAnthropic:
+		return 0
 	}
-	return 0
+	return defaultContextTokens
 }
 
 // diffBlock devolve o diff do alvo (ou de um arquivo dele) para ir na mensagem, uma vez por

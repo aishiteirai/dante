@@ -299,3 +299,19 @@ func TestGastoDaResposta(t *testing.T) {
 		t.Fatal("humanTokens")
 	}
 }
+
+func TestContextoPadrao(t *testing.T) {
+	m := model{}
+	m.prov = config.Provider{Tipo: llm.KindOpenAI} // ex.: Baidu acrescentado sem "contexto"
+	if got := m.effectiveContext(); got != defaultContextTokens {
+		t.Fatalf("sem contexto: %d", got)
+	}
+	m.prov.Contexto = 8000
+	if m.effectiveContext() != 8000 {
+		t.Fatal("contexto configurado deveria valer")
+	}
+	m.prov = config.Provider{Tipo: llm.KindAnthropic}
+	if m.effectiveContext() != 0 {
+		t.Fatal("no Claude o servidor cuida do contexto")
+	}
+}
