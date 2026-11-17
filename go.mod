@@ -1,4 +1,4 @@
-module revisor-codigo/tui
+module github.com/aishiteirai/dante
 
 go 1.24.7
 

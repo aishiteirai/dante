@@ -1,5 +1,5 @@
 [project]
-name = "revisor-codigo"
+name = "dante-revisor"
 version = "0.1.0"
 description = "Harness de revisão de código com o Claude Agent SDK"
 requires-python = ">=3.10"

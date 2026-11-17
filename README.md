@@ -1,4 +1,4 @@
-# revisor-codigo
+# dante
 
 Revisor de código para o terminal, construído sobre o **Claude Agent SDK**.
 
@@ -14,8 +14,15 @@ Requisitos: Python ≥ 3.10, Go ≥ 1.24, git e credenciais do Claude Code
 (`ANTHROPIC_API_KEY` ou login do `claude`).
 
 ```bash
+git clone https://github.com/aishiteirai/dante.git && cd dante
 make install        # pip install -e . e copia revisor-tui para ~/.local/bin
 make test
+```
+
+Ou, só a interface Go, direto do GitHub (o pacote Python continua necessário):
+
+```bash
+go install github.com/aishiteirai/dante/cmd/revisor-tui@latest
 ```
 
 ## Interface de terminal
@@ -85,7 +92,7 @@ histórico.
 ## Arquitetura
 
 ```
-tui/            interface Go: executa `python -m revisor revisar --eventos` e lê o JSONL
+cmd/revisor-tui/  interface Go: executa `python -m revisor revisar --eventos` e lê o JSONL
 revisor/
   git_utils.py  alvos: working tree, stage, branch, commits
   prompts.py    system prompt (bug > segurança > qualidade > padrões) + prompt do alvo

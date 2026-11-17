@@ -9,15 +9,15 @@ install-python:
 	$(PYTHON) -m pip install -e .
 
 build:
-	cd tui && go build -o revisor-tui .
+	go build -o revisor-tui ./cmd/revisor-tui
 
 install-tui: build
 	install -d $(PREFIX)/bin
-	install -m 0755 tui/revisor-tui $(PREFIX)/bin/revisor-tui
+	install -m 0755 revisor-tui $(PREFIX)/bin/revisor-tui
 
 test:
 	$(PYTHON) -m pytest -q
-	cd tui && go vet ./... && go test ./...
+	go vet ./... && go test ./...
 
 clean:
-	rm -f tui/revisor-tui
+	rm -f revisor-tui
