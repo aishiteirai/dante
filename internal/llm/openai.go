@@ -75,10 +75,11 @@ type openAIChat struct {
 	tools    []oaTool
 	messages []oaMessage
 	budget   *budget
+	session  string
 }
 
 func newOpenAI(p Provider, o Options) *openAIChat {
-	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}, budget: newBudget(o.ContextTokens)}
+	c := &openAIChat{p: p, opts: o, http: &http.Client{Timeout: 15 * time.Minute}, budget: newBudget(o.ContextTokens), session: newSessionID()}
 	if o.System != "" {
 		c.messages = append(c.messages, oaMessage{Role: "system", Content: ptr(o.System)})
 	}
@@ -193,6 +194,10 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("User-Agent", UserAgent)
+	if c.p.SessionHeader != "" {
+		req.Header.Set(c.p.SessionHeader, c.session)
+	}
 	if k := c.p.Key(); k != "" {
 		req.Header.Set("Authorization", "Bearer "+k)
 	}
@@ -328,10 +333,15 @@ func ListModels(ctx context.Context, p Provider, onlyFree bool) ([]string, error
 	if p.Kind == KindOllama {
 		return listOllama(ctx, p)
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(p.BaseURL, "/")+"/models", nil)
+	url := strings.TrimSuffix(p.BaseURL, "/") + "/models"
+	if p.ModelsURL != "" {
+		url = p.ModelsURL
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", UserAgent)
 	if k := p.Key(); k != "" {
 		req.Header.Set("Authorization", "Bearer "+k)
 	}

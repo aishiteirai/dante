@@ -258,3 +258,43 @@ func TestOllamaPull(t *testing.T) {
 		t.Fatalf("err=%v pedido=%q passos=%v", err, pedido, passos)
 	}
 }
+
+func TestIdentificacaoESessao(t *testing.T) {
+	var agentes, sessoes []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agentes = append(agentes, r.Header.Get("User-Agent"))
+		sessoes = append(sessoes, r.Header.Get("x-opencode-session"))
+		if r.URL.Path == "/lista" {
+			fmt.Fprint(w, `{"data":[{"id":"kimi-k3"}]}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	p := Provider{Kind: KindOpenAI, BaseURL: srv.URL + "/v1", APIKey: "k", SessionHeader: "x-opencode-session", ModelsURL: srv.URL + "/lista"}
+	a, _ := New(p, Options{Model: "m"})
+	b, _ := New(p, Options{Model: "m"})
+	for _, c := range []Chat{a, a, b} {
+		if _, err := c.Send(context.Background(), "oi", func(Event) {}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if agentes[0] != UserAgent {
+		t.Fatalf("User-Agent = %q", agentes[0])
+	}
+	if !strings.HasPrefix(sessoes[0], "ses_") || sessoes[0] != sessoes[1] || sessoes[1] == sessoes[2] {
+		t.Fatalf("sessões = %v (mesma conversa deve repetir o ID; outra conversa, não)", sessoes)
+	}
+	models, err := ListModels(context.Background(), p, false)
+	if err != nil || len(models) != 1 || models[0] != "kimi-k3" {
+		t.Fatalf("ListModels com ModelsURL = %v, %v", models, err)
+	}
+	// Sem SessionHeader, nenhum cabeçalho de sessão é enviado.
+	sessoes = nil
+	c, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL + "/v1"}, Options{Model: "m"})
+	c.Send(context.Background(), "oi", func(Event) {})
+	if sessoes[0] != "" {
+		t.Fatalf("sessão enviada sem pedido: %q", sessoes[0])
+	}
+}

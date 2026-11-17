@@ -5,6 +5,8 @@ package llm
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 )
@@ -67,6 +69,22 @@ type Provider struct {
 	BaseURL   string
 	APIKey    string
 	APIKeyEnv string
+	// SessionHeader, se definido, é o cabeçalho em que vai um ID estável por conversa (o
+	// OpenCode Go exige x-opencode-session para rotear e aproveitar o cache).
+	SessionHeader string
+	// ModelsURL é onde listar os modelos, quando não é BaseURL + "/models".
+	ModelsURL string
+}
+
+// UserAgent identifica o dante nas requisições HTTP (alguns provedores, como o OpenCode
+// Go, pedem que o cliente se identifique em vez de usar o nome da biblioteca HTTP).
+const UserAgent = "dante/0.4 (+https://github.com/aishiteirai/dante)"
+
+// newSessionID gera um ID de conversa no formato ses_<hex>.
+func newSessionID() string {
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	return "ses_" + hex.EncodeToString(b)
 }
 
 func (p Provider) Key() string {
