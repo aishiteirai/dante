@@ -151,6 +151,11 @@ func (m model) frame(p paneID, r rect, content string) []string {
 	head := tst.Render(title)
 	if p == pDiff {
 		head += "  " + m.tabsLabel()
+	} else if p == pChat && m.modelName != "" {
+		head += "  " + modeChip(m.task, m.level)
+		if extra != "" {
+			head += " " + subtleStyle.Render(extra)
+		}
 	} else if extra != "" {
 		head += " " + subtleStyle.Render(extra)
 	}
@@ -229,6 +234,9 @@ func (m model) viewMain() string {
 	screen = append(screen, m.footer())
 	if m.mode == modePrefix {
 		screen = overlay(screen, m.commandsPopup(), m.width)
+	}
+	if m.mode == modeRefs {
+		screen = overlay(screen, m.refsPopup(), m.width)
 	}
 	return strings.Join(screen, "\n")
 }
@@ -361,7 +369,7 @@ func (m model) helpLine() string {
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"
 		}
-		return base + "enter envia · alt+enter quebra linha · ctrl+n nova conversa"
+		return base + "enter envia · / comandos · ctrl+g referências · ctrl+o leituras · ctrl+n nova conversa"
 	}
 	return base
 }
@@ -381,5 +389,32 @@ func padTo(s string, w int) string {
 // ---- painel: chat ----
 
 func (m model) viewChat(w int) string {
-	return m.chatView.View() + "\n" + subtleStyle.Render(strings.Repeat("─", w)) + "\n" + m.input.View()
+	view := m.chatView.View()
+	// Ao digitar "/", a lista de comandos aparece logo acima da caixa de texto.
+	if sugg := commandSuggestions(m.input.Value()); len(sugg) > 0 && m.focus == pChat {
+		lines := strings.Split(view, "\n")
+		var box []string
+		for i, c := range sugg {
+			name := lipgloss.NewStyle().Foreground(accent).Render(padTo(c.name, 11))
+			if i == 0 {
+				name = selectedStyle.Render(padTo(c.name, 11))
+			}
+			box = append(box, truncateW(name+" "+subtleStyle.Render(c.desc), w))
+		}
+		box = append(box, helpStyle.Render(truncateW("tab completa", w)))
+		if len(box) < len(lines) {
+			lines = append(lines[:len(lines)-len(box)], box...)
+		}
+		view = strings.Join(lines, "\n")
+	}
+	return view + "\n" + subtleStyle.Render(strings.Repeat("─", w)) + "\n" + m.input.View()
+}
+
+// modeChip: "revisar · normal", com a cor da tarefa.
+func modeChip(t taskMode, l levelMode) string {
+	st := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#5b2bb5", Dark: "#cdb4ff"})
+	if t == taskExplicar {
+		st = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#0a6650", Dark: "#8fe3c8"})
+	}
+	return st.Render("‹" + modeLabel(t, l) + "›")
 }

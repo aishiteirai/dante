@@ -13,6 +13,7 @@ const (
 	modePrefix
 	modeMove
 	modeResize
+	modeRefs // lista de referências (ctrl+g)
 )
 
 const resizeStep = 0.03
@@ -199,6 +200,20 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return mm, cmd
 	case modeMove, modeResize:
 		return m.moveOrResize(key)
+	case modeRefs:
+		return m.updateRefKeys(key)
+	}
+
+	if key == "ctrl+o" { // detalhes das leituras do modelo no chat
+		m.showActivity = !m.showActivity
+		m.refreshChat()
+		return m, nil
+	}
+	if key == "ctrl+g" { // referências do chat, de qualquer painel
+		m.mode = modeRefs
+		m.refIdx = max(len(m.refs)-1, 0)
+		m.refDigits = ""
+		return m, nil
 	}
 
 	if isPrefixKey(key) {
@@ -226,6 +241,13 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if key == "tab" && m.focus == pChat {
+		if sugg := commandSuggestions(m.input.Value()); len(sugg) > 0 {
+			m.input.SetValue(sugg[0].name + " ")
+			m.input.CursorEnd()
+			return m, nil
+		}
+	}
 	switch key {
 	case "tab":
 		return m.cycleFocus(1)

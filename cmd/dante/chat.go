@@ -25,14 +25,17 @@ const (
 	eTool
 	eNotice
 	eError
-	eUsage // gasto de tokens de uma resposta
+	eUsage   // gasto de tokens de uma resposta
+	eFinding // achado de revisão, desenhado como cartão
 )
 
 type entry struct {
 	kind   entryKind
 	text   string
-	ok     bool // ferramenta: terminou sem erro
-	done   bool // ferramenta: terminou
+	f      *finding // eFinding
+	ref    int      // número da referência do achado
+	ok     bool     // ferramenta: terminou sem erro
+	done   bool     // ferramenta: terminou
 	cache  string
 	cacheW int
 	cacheN int
@@ -40,10 +43,12 @@ type entry struct {
 
 var guidelineFiles = []string{".dante/diretrizes.md", ".revisor/diretrizes.md", "DANTE.md", "REVIEW.md"}
 
-const systemPrompt = `Você é o dante, um revisor de código sênior que trabalha no terminal do desenvolvedor, no repositório %q.
-O desenvolvedor navega pelos commits e pelos arquivos alterados e conversa com você sobre as mudanças. Cada mensagem dele
-começa com um bloco <contexto> que diz o alvo em revisão (um commit ou as mudanças locais ainda não commitadas) e o
-arquivo em foco. Quando cabe, vem também um bloco <diff> com as mudanças e 10 linhas de contexto ao redor de cada uma.
+const systemPrompt = `Você é o dante, um assistente de código sênior que trabalha no terminal do desenvolvedor, no repositório
+%q. Você revisa mudanças e também explica o código para quem quer entendê-lo. O desenvolvedor navega pelos commits e pelos
+arquivos alterados e conversa com você. Cada mensagem dele começa com um bloco <contexto> que diz o alvo (um commit ou as
+mudanças locais ainda não commitadas) e o arquivo em foco. Quando cabe, vem também um bloco <diff> com as mudanças e 10
+linhas de contexto ao redor de cada uma. Por último vem um bloco <modo> com a tarefa (revisar ou explicar) e o formato da
+resposta: siga-o, ele vale para aquela mensagem.
 
 Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então leia com economia:
 - Comece pelo <diff>. Ele já mostra o que mudou; não peça git_diff de novo para o mesmo alvo. Sem <diff> na mensagem,
@@ -53,16 +58,13 @@ Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então le
   ferramenta na mesma resposta. Não abra de novo um arquivo que já leu nesta conversa.
 - Não opine sobre código que não viu, no diff ou num arquivo. Use git_log e git_blame quando a intenção original ajudar.
 - Num commit, read_file com ref=<sha> mostra o arquivo como estava naquele commit; sem ref, mostra o que está no disco hoje.
-- Ancore cada observação em arquivo:linha. Para bugs e falhas de segurança, descreva uma entrada ou situação concreta que
-  leva ao erro; se não conseguir, diga que é uma suspeita.
-- Prioridade: bugs, depois segurança, depois qualidade e simplificação, depois os padrões do time. Não comente estilo que
-  um formatador resolveria.
-- Se as mudanças estiverem boas, diga isso sem inventar problemas.
+- Ancore cada observação em arquivo:linha (ex.: internal/llm/openai.go:111). Numa revisão, para bugs e falhas de segurança,
+  descreva uma entrada ou situação concreta que leva ao erro; se não conseguir, diga que é uma suspeita.
+- Prioridade numa revisão: bugs, depois segurança, depois qualidade e simplificação, depois os padrões do time. Não
+  comente estilo que um formatador resolveria.
 - Por enquanto você só lê: não consegue alterar arquivos. Ao sugerir correções, mostre o trecho de código proposto.
 
-Responda em português, em markdown, de forma direta. Numa revisão, comece com um resumo de uma ou duas frases e depois
-liste os pontos do mais grave para o menos grave, cada um com arquivo:linha, o problema, por que importa e a sugestão.
-Em perguntas simples, responda só o que foi perguntado.`
+Responda em português, em markdown, de forma direta. Em perguntas simples, responda só o que foi perguntado.`
 
 func (m *model) buildSystemPrompt() string {
 	s := fmt.Sprintf(systemPrompt, repoDisplayName(m.repo.Root))
@@ -96,6 +98,7 @@ func (m *model) resetChat() {
 	m.chat = nil
 	m.entries = nil
 	m.diffSent, m.diffPending = "", ""
+	m.refs, m.refIdx = nil, 0
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -117,8 +120,8 @@ func (m *model) ensureChat() error {
 	c, err := llm.New(m.prov.LLM(), llm.Options{
 		Model:  m.modelName,
 		System: m.buildSystemPrompt(),
-		Tools:  repo.Tools(),
-		Exec:   m.repo.Executor(func() string { return *sendTo }),
+		Tools:  append(repo.Tools(), findingToolDef()),
+		Exec:   withFindings(m.repo.Executor(func() string { return *sendTo })),
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
 		ContextTokens: m.effectiveContext(),
@@ -178,6 +181,7 @@ func (m model) quickReview(path string) (tea.Model, tea.Cmd) {
 	if path != "" {
 		text = fmt.Sprintf("Revise as mudanças em `%s`.", path)
 	}
+	m.task = taskRevisar // a tecla r é sempre uma revisão
 	fm, cmd := m.focusPane(pChat)
 	nm, send := fm.(model).sendScoped(text, path)
 	return nm, tea.Batch(cmd, send)
@@ -242,13 +246,43 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.setInfo("aguarde a resposta terminar (esc cancela)")
 		return m, nil
 	}
+	// Comandos de modo no começo da mensagem; sem eles, a detecção pelo pedido.
+	t, l, rest, unknown := parseCommands(text)
+	if unknown != "" {
+		m.setErr("comando desconhecido: " + unknown + " · digite / para ver os comandos")
+		return m, nil
+	}
+	explicit := t != nil || l != nil
+	if !explicit {
+		t, l = detectMode(rest)
+	}
+	before := modeLabel(m.task, m.level)
+	if t != nil {
+		m.task = *t
+	}
+	if l != nil {
+		m.level = *l
+	}
+	if after := modeLabel(m.task, m.level); after != before {
+		note := "modo: " + after
+		if !explicit {
+			note = "↻ modo detectado no seu pedido: " + after + " · /revisar, /explicar ou /normal para trocar"
+		}
+		m.entries = append(m.entries, entry{kind: eNotice, text: note})
+	}
+	if rest == "" { // só trocou o modo
+		m.refreshChat()
+		m.chatView.GotoBottom()
+		return m, nil
+	}
+	text = rest
 	if err := m.ensureChat(); err != nil {
 		m.setErr(err.Error())
 		return m, nil
 	}
 	*m.sendTo = m.target
 	m.diffPending = ""
-	prompt := m.contextBlock() + m.diffBlock(scope) + text
+	prompt := m.contextBlock() + m.diffBlock(scope) + modeBlock(m.task, m.level) + text
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""
@@ -318,8 +352,22 @@ func (m *model) onChatEvent(ev llm.Event) {
 		m.thinking = true
 	case llm.EvToolCall:
 		m.thinking = false
+		if ev.Call.Name == findingTool {
+			if f, err := parseFinding(ev.Call.Args); err == nil {
+				n := 0
+				if p, ok := m.resolveRefPath(f.Arquivo); ok {
+					f.Arquivo = p
+					n = m.addRef(p, f.Linha)
+				}
+				m.entries = append(m.entries, entry{kind: eFinding, f: &f, ref: n})
+			}
+			break
+		}
 		m.entries = append(m.entries, entry{kind: eTool, text: describeCall(ev.Call)})
 	case llm.EvToolResult:
+		if ev.Call.Name == findingTool {
+			break // o cartão já foi desenhado; um erro volta ao modelo, que corrige
+		}
 		for i := len(m.entries) - 1; i >= 0; i-- {
 			if m.entries[i].kind == eTool && !m.entries[i].done {
 				m.entries[i].done, m.entries[i].ok = true, !ev.IsError
@@ -525,6 +573,8 @@ func (m model) saveTranscript() {
 			fmt.Fprintf(&b, "## %s\n\n%s\n\n", m.modelName, e.text)
 		case eTool:
 			fmt.Fprintf(&b, "> %s\n\n", e.text)
+		case eFinding:
+			b.WriteString(findingMarkdown(*e.f, e.ref) + "\n")
 		default:
 			fmt.Fprintf(&b, "> **%s**\n\n", e.text)
 		}
@@ -538,6 +588,46 @@ var (
 	mdRenderers = map[int]*glamour.TermRenderer{}
 	darkBg      = true
 )
+
+// activityLine resume uma sequência de ações do modelo numa linha.
+func (m model) activityLine(run []entry, w int) string {
+	pending, failed := 0, 0
+	var texts []string
+	for _, e := range run {
+		texts = append(texts, e.text)
+		if !e.done {
+			pending++
+		} else if !e.ok {
+			failed++
+		}
+	}
+	if pending > 0 {
+		return m.spin.View() + " " + subtleStyle.Render(truncateW(run[len(run)-1].text+"…", w-2))
+	}
+	mark := okStyle.Render("✓")
+	if failed > 0 {
+		mark = errStyle.Render("✗")
+	}
+	label := plural(len(run), "leitura", "leituras")
+	if failed > 0 {
+		label += fmt.Sprintf(" (%d com erro)", failed)
+	}
+	return mark + " " + subtleStyle.Render(truncateW(label+": "+strings.Join(texts, " · "), w-2))
+}
+
+// followedByFinding: depois desta resposta (pulando as leituras) vem um cartão de achado.
+func (m model) followedByFinding(i int) bool {
+	for j := i + 1; j < len(m.entries); j++ {
+		switch m.entries[j].kind {
+		case eTool:
+			continue
+		case eFinding:
+			return true
+		}
+		return false
+	}
+	return false
+}
 
 func markdown(text string, width int) string {
 	r, ok := mdRenderers[width]
@@ -567,8 +657,22 @@ func (m *model) refreshChat() {
 		parts = append(parts, m.chatWelcome(w))
 	}
 	last := len(m.entries) - 1
+	skip := -1
 	for i := range m.entries {
+		if i <= skip {
+			continue
+		}
 		e := &m.entries[i]
+		// Leituras seguidas do modelo viram uma linha só (ctrl+o mostra uma por linha).
+		if e.kind == eTool && !m.showActivity {
+			end := i
+			for end+1 < len(m.entries) && m.entries[end+1].kind == eTool {
+				end++
+			}
+			parts = append(parts, "  "+m.activityLine(m.entries[i:end+1], w-2))
+			skip = end
+			continue
+		}
 		switch e.kind {
 		case eUser:
 			parts = append(parts, "", selectedStyle.Render("você")+"\n"+lipgloss.NewStyle().Width(w).Render(e.text))
@@ -578,13 +682,17 @@ func (m *model) refreshChat() {
 				body = lipgloss.NewStyle().Width(w).Render(e.text) // texto cru enquanto chega
 			} else {
 				if e.cacheW != w || e.cacheN != len(e.text) {
-					e.cache, e.cacheW, e.cacheN = markdown(e.text, w), w, len(e.text)
+					e.cache, e.cacheW, e.cacheN = markdown(m.annotateRefs(e.text), w), w, len(e.text)
 				}
 				body = e.cache
 			}
 			head := ""
 			if i == 0 || m.entries[i-1].kind == eUser {
 				head = "\n" + titleStyle.Render(m.modelName) + "\n"
+			}
+			// O texto antes dos cartões de achados é o resumo da revisão.
+			if m.followedByFinding(i) {
+				head += lipgloss.NewStyle().Foreground(accent).Bold(true).Render("▍RESUMO") + "\n"
 			}
 			parts = append(parts, head+body)
 		case eTool:
@@ -602,6 +710,8 @@ func (m *model) refreshChat() {
 			parts = append(parts, "  "+errStyle.Render(lipgloss.NewStyle().Width(w-2).Render("⚠ "+e.text)))
 		case eUsage:
 			parts = append(parts, "  "+subtleStyle.Render(truncateW("↳ "+e.text, w-2)))
+		case eFinding:
+			parts = append(parts, "", renderFinding(*e.f, e.ref, w))
 		}
 	}
 	if m.streaming && (last < 0 || m.entries[last].kind != eAssistant || m.thinking) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/aishiteirai/dante/internal/repo"
@@ -42,15 +43,32 @@ const (
 func (m *model) setDiff(path, raw string) {
 	m.diffPath, m.diffRaw = path, raw
 	m.vtab = vtDiff
+	m.markLine, m.pendingLine = m.pendingLine, 0
 	m.renderPreview()
 	m.preview.GotoTop()
+	m.scrollToMark()
 }
 
 func (m *model) setDoc(title, raw string, isDiff bool) {
 	m.docTitle, m.docRaw, m.docIsDiff = title, raw, isDiff
 	m.vtab = vtDoc
+	m.markLine, m.pendingLine = m.pendingLine, 0
 	m.renderPreview()
 	m.preview.GotoTop()
+	m.scrollToMark()
+}
+
+// scrollToMark rola até a linha marcada (referência aberta), deixando 3 linhas acima.
+func (m *model) scrollToMark() {
+	if m.markLine <= 0 {
+		return
+	}
+	for i, l := range m.rowLines {
+		if l >= m.markLine {
+			m.preview.SetYOffset(max(i-3, 0))
+			return
+		}
+	}
 }
 
 func (m *model) clearPreview() {
@@ -70,18 +88,24 @@ func (m model) splitView() bool {
 
 func (m *model) renderPreview() {
 	w := max(m.preview.Width, 10)
-	m.hunkStarts, m.hunkLines = nil, nil
+	m.hunkStarts, m.hunkLines, m.rowLines = nil, nil, nil
 	var lines []string
 	switch {
 	case m.vtab == vtDoc && !m.docIsDiff:
 		for _, l := range strings.Split(strings.TrimRight(m.docRaw, "\n"), "\n") {
 			l = truncateW(expandTabs(l), w)
-			if i := strings.Index(l, "  "); i > 0 && i <= 6 { // número de linha do read_file
-				l = subtleStyle.Render(l[:i]) + l[i:]
+			n, numEnd := lineNumberPrefix(l) // "    12  código", como o read_file numera
+			if numEnd > 0 {
+				if m.markLine > 0 && n == m.markLine {
+					l = cursorBg.Render(padTo(markArrow()+l[1:], w))
+				} else {
+					l = subtleStyle.Render(l[:numEnd]) + l[numEnd:]
+				}
 			} else if strings.HasPrefix(l, "=== ") { // separador de read_files
 				l = labelStyle.Render(l)
 			}
 			lines = append(lines, l)
+			m.rowLines = append(m.rowLines, n)
 		}
 	default:
 		raw := m.diffRaw
@@ -98,15 +122,30 @@ func (m *model) renderPreview() {
 			return
 		}
 		if m.splitView() {
-			lines, m.hunkStarts = renderSplit(d, w)
+			lines, m.hunkStarts, m.rowLines = renderSplit(d, w, m.markLine)
 		} else {
-			lines, m.hunkStarts = renderUnified(d, w)
+			lines, m.hunkStarts, m.rowLines = renderUnified(d, w, m.markLine)
 		}
 		for _, h := range d.hunks {
 			m.hunkLines = append(m.hunkLines, h.newStart)
 		}
 	}
 	m.preview.SetContent(strings.Join(lines, "\n"))
+}
+
+// lineNumberPrefix lê o número no começo de uma linha numerada pelo read_file
+// ("    12  código") e devolve o número e onde o código começa (0 se não houver número).
+func lineNumberPrefix(l string) (int, int) {
+	t := strings.TrimLeft(l, " ")
+	j := strings.Index(t, "  ")
+	if j <= 0 {
+		return 0, 0
+	}
+	n, err := strconv.Atoi(t[:j])
+	if err != nil {
+		return 0, 0
+	}
+	return n, len(l) - len(t) + j
 }
 
 // currentHunk é o trecho no topo da área visível. No fim da rolagem, um trecho perto do
@@ -154,6 +193,9 @@ func (m model) visualizerHeader(w int) string {
 	case m.vtab == vtDoc:
 		l1 = boldStyle.Render(m.docTitle)
 		l2 = subtleStyle.Render("aberto pelo modelo · [ volta ao diff")
+		if strings.Contains(m.docTitle, "· referência [") {
+			l2 = subtleStyle.Render("referência do chat · ctrl+g abre outra · [ volta ao diff")
+		}
 	case len(m.files) > 0 && m.fileIdx < len(m.files):
 		f := m.files[m.fileIdx]
 		name := f.Path
