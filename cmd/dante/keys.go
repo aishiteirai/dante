@@ -125,8 +125,20 @@ func (m model) saveKey(key string, verified bool) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.screen = scrModel
+	// Abre o provedor recém-configurado e, se ele lista os modelos (o Gemini e o
+	// OpenRouter só listam com chave), pede a lista de novo.
+	m.modelExp, m.modelWant = p.ID, nil
+	delete(m.listErr, p.ID)
 	m.buildModelRows()
+	for i, r := range m.modelRows {
+		if r.header && r.prov.ID == p.ID {
+			m.modelIdx = i
+		}
+	}
 	m.setInfo(note)
+	if p.Listar {
+		return m, listModels(p)
+	}
 	return m, nil
 }
 

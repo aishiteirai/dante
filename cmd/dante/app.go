@@ -60,15 +60,18 @@ type model struct {
 	opening     bool
 
 	// escolha do modelo
-	modelRows  []modelRow
-	modelIdx   int
-	modelOff   int
-	modelWant  *config.Choice
-	pulling    string // modelo sendo baixado no Ollama
-	pullStatus string
-	pullCancel context.CancelFunc
-	listed     map[string][]string
-	listErr    map[string]string
+	modelRows      []modelRow
+	modelIdx       int
+	modelOff       int
+	modelWant      *config.Choice
+	modelExp       string // provedor aberto na tela de modelos
+	modelFilter    string // busca na tela de modelos
+	modelFiltering bool
+	pulling        string // modelo sendo baixado no Ollama
+	pullStatus     string
+	pullCancel     context.CancelFunc
+	listed         map[string][]string
+	listErr        map[string]string
 
 	// cadastro de chave
 	keyProv       config.Provider

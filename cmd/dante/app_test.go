@@ -58,8 +58,9 @@ func TestModelRowsEPreSelecao(t *testing.T) {
 	cfg.UltimoModelo = &config.Choice{Provedor: "ollama", Modelo: "qwen2.5-coder:7b"}
 	m := newModel(cfg, "", "")
 	m.enterModelScreen()
-	if r := m.modelRows[m.modelIdx]; r.prov.ID != "claude" {
-		t.Fatalf("antes da lista local, esperava o primeiro modelo; veio %s/%s", r.prov.ID, r.model)
+	// Antes da lista local chegar, o cursor fica no Ollama (o único pronto: procurando).
+	if r := m.modelRows[m.modelIdx]; r.prov.ID != "ollama" || !r.header {
+		t.Fatalf("antes da lista local: %s/%s", r.prov.ID, r.model)
 	}
 	nm, _ := m.Update(modelsListedMsg{prov: "ollama", models: []string{"deepseek-r1:8b", "qwen2.5-coder:7b"}})
 	m = nm.(model)
@@ -119,8 +120,8 @@ func TestFluxoDaChave(t *testing.T) {
 	m.repo = repo.Repo{Root: t.TempDir()}
 	m.screen = scrModel
 	m.enterModelScreen()
-	for i, r := range m.modelRows { // escolhe deepseek-chat, que está sem chave
-		if r.model == "deepseek-chat" {
+	for i, r := range m.modelRows { // escolhe o DeepSeek, que está sem chave
+		if r.header && r.prov.ID == "deepseek" {
 			m.modelIdx = i
 		}
 	}
@@ -381,5 +382,58 @@ func TestDiffJaEnviadoNaoRepete(t *testing.T) {
 	m = nm.(model)
 	if out := call(`{"path":"a.py"}`); out != "diff de novo" {
 		t.Fatal("depois de uma falha, o diff precisa ser gerado de novo")
+	}
+}
+
+func TestTelaDeModelosEnxuta(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	t.Setenv("DEEPSEEK_API_KEY", "sk-x")
+	t.Setenv("GEMINI_API_KEY", "g-x")
+	cfg, _ := config.Load()
+	m := newModel(cfg, "", "")
+	m.width, m.height = 120, 40
+	m.screen = scrModel
+	m.enterModelScreen()
+	nm, _ := m.Update(modelsListedMsg{prov: "ollama", err: fmt.Errorf("desligado")})
+	nm, _ = nm.(model).Update(modelsListedMsg{prov: "lmstudio", err: fmt.Errorf("desligado")})
+	m = nm.(model)
+	names := func() (out []string) {
+		for _, r := range m.modelRows {
+			switch {
+			case r.label != "":
+				out = append(out, "#")
+			case r.header:
+				out = append(out, r.prov.ID)
+			default:
+				out = append(out, "  "+r.model)
+			}
+		}
+		return
+	}
+	got := strings.Join(names(), ",")
+	// Prontos primeiro, só o primeiro aberto; os outros numa linha cada.
+	if !strings.HasPrefix(got, "#,deepseek,  deepseek-chat,  deepseek-reasoner,gemini,#,claude") || strings.Contains(got, "claude-opus") {
+		t.Fatalf("linhas = %s", got)
+	}
+	// Descer até o Gemini abre o Gemini e fecha o DeepSeek.
+	for i := 0; i < 3; i++ {
+		nm, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = nm.(model)
+	}
+	if r := m.modelRows[m.modelIdx]; !r.header || r.prov.ID != "gemini" || m.modelExp != "gemini" || strings.Contains(strings.Join(names(), ","), "deepseek-chat") {
+		t.Fatalf("sanfona: cursor em %s, aberto %s, linhas %v", r.prov.ID, m.modelExp, names())
+	}
+	// Busca em todos os provedores, inclusive os sem chave.
+	for _, k := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/")}, {Type: tea.KeyRunes, Runes: []rune("opus")}} {
+		nm, _ = m.Update(k)
+		m = nm.(model)
+	}
+	if len(m.modelRows) != 1 || m.modelRows[0].model != "claude-opus-5-5" || !strings.Contains(stripANSI(m.View()), "sem chave") {
+		t.Fatalf("busca: %v", names())
+	}
+	nm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = nm.(model)
+	if m.modelFilter != "" || m.modelFiltering || len(m.modelRows) < 5 {
+		t.Fatal("esc deveria limpar a busca")
 	}
 }
