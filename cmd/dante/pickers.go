@@ -257,6 +257,8 @@ func (m *model) buildModelRows() {
 					h.note = fmt.Sprintf("%d grátis · %s", len(list), h.note)
 				case listed:
 					h.note = fmt.Sprintf("%s · %s", plural(len(list), "modelo", "modelos"), h.note)
+				case failed && !p.Local && !p.HasKey():
+					// Sem chave, provedores como o Gemini nem listam: basta o "sem chave".
 				case failed:
 					h.note = "não consegui listar os modelos · " + h.note
 				case !listed:
