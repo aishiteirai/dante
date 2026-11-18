@@ -31,22 +31,26 @@ var categories = []string{"bug", "seguranca", "qualidade", "padroes"}
 func findingToolDef() llm.Tool {
 	str := func(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
 	enum := func(d string, vals []string) map[string]any {
-		return map[string]any{"type": "string", "description": d, "enum": vals}
+		e := map[string]any{"type": "string", "enum": vals}
+		if d != "" {
+			e["description"] = d
+		}
+		return e
 	}
 	return llm.Tool{
 		Name: findingTool,
-		Description: "Registra um problema encontrado na revisão; o dante o mostra ao desenvolvedor como um cartão. " +
-			"Chame uma vez por problema, do mais grave para o menos grave. Só na tarefa de revisar.",
+		Description: "Registra um problema da revisão (vira um cartão para o desenvolvedor). Um por problema, do mais grave " +
+			"ao menos grave, todos na mesma resposta.",
 		Params: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"arquivo":    str("Caminho relativo à raiz do repositório."),
-				"linha":      map[string]any{"type": "integer", "description": "Linha onde o problema aparece (no arquivo novo)."},
-				"severidade": enum("critica = perda de dados ou brecha explorável; alta = bug provável no uso normal; media = caso de borda plausível; baixa = melhoria com ganho claro.", severities),
-				"categoria":  enum("Tipo do problema.", categories),
-				"titulo":     str("Uma linha, até ~70 caracteres."),
-				"explicacao": str("O problema e por que importa; para bug ou segurança, a situação concreta que leva ao erro."),
-				"sugestao":   str("Opcional: a correção proposta, em texto ou com um trecho de código em markdown."),
+				"arquivo":    str("Caminho a partir da raiz."),
+				"linha":      map[string]any{"type": "integer", "description": "Linha no arquivo novo."},
+				"severidade": enum("critica: perda de dados ou brecha; alta: bug no uso normal; media: caso de borda; baixa: melhoria.", severities),
+				"categoria":  enum("", categories),
+				"titulo":     str("Até ~70 caracteres."),
+				"explicacao": str("O problema e a situação concreta que leva a ele."),
+				"sugestao":   str("Correção proposta (opcional)."),
 			},
 			"required": []string{"arquivo", "linha", "severidade", "titulo", "explicacao"},
 		},

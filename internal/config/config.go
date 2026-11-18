@@ -128,8 +128,9 @@ type Config struct {
 	PadroesConhecidos []string `json:"padroes_conhecidos,omitempty"`
 }
 
-// DefaultTurnBudget cobre com folga a revisão de um commit grande lendo em lote.
-const DefaultTurnBudget = 150000
+// DefaultTurnBudget cobre com folga a revisão de um commit grande: com o diff na mensagem
+// e no máximo duas rodadas de leitura, uma revisão típica fica em 10 a 30 mil tokens.
+const DefaultTurnBudget = 100000
 
 // TurnBudget devolve o orçamento por pergunta (0 = sem limite).
 func (c Config) TurnBudget() int {

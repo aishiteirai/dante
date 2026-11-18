@@ -135,7 +135,7 @@ func (m model) openRef(n int) (tea.Model, tea.Cmd) {
 	key := fmt.Sprintf("ref\x00%s\x00%d", r.path, r.line)
 	m.previewKey = key
 	exec := m.repo.Executor(func() string { return m.target })
-	args := map[string]any{"path": r.path}
+	args := map[string]any{"path": r.path, "inteiro": true}
 	if m.target != repo.WorkTree {
 		args["ref"] = m.target
 	}
@@ -145,7 +145,7 @@ func (m model) openRef(n int) (tea.Model, tea.Cmd) {
 		out, isErr := exec(context.Background(), llm.ToolCall{Name: "read_file", Args: string(b)})
 		if isErr && args["ref"] != nil {
 			// O arquivo não existe naquele commit: mostra a versão atual, avisando.
-			cur, _ := json.Marshal(map[string]any{"path": r.path})
+			cur, _ := json.Marshal(map[string]any{"path": r.path, "inteiro": true})
 			if out2, bad := exec(context.Background(), llm.ToolCall{Name: "read_file", Args: string(cur)}); !bad {
 				return refDocMsg{key: key, title: title + " · versão atual (não existe neste commit)", content: out2, line: r.line}
 			}
