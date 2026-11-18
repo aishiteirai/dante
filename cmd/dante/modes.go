@@ -169,27 +169,37 @@ func modeBlock(t taskMode, l levelMode, agent string) string {
 	case taskRevisar:
 		b.WriteString(reviewInstructions)
 	case taskExplicar:
-		b.WriteString("Tarefa: explicar. Diga o que o código ou a mudança faz e por quê, sem procurar problemas. " +
-			"Organize em seções curtas com títulos (## O que faz, ## Como funciona, ## Onde fica) e cite " +
-			"arquivo:linha sempre que mencionar um trecho de código.\n")
+		b.WriteString(explainInstructions)
 	}
 	switch l {
 	case levelAprendiz:
 		b.WriteString("Público: alguém que está aprendendo. Evite jargão; quando usar um termo técnico, explique-o " +
-			"em poucas palavras. Inclua uma analogia do dia a dia, um passo a passo numerado, uma seção " +
-			"## Palavras novas com os termos usados e uma seção ## Por onde continuar dizendo qual arquivo ler primeiro.\n")
+			"em poucas palavras. Inclua uma analogia do dia a dia, um passo a passo numerado e, no fim, " +
+			"**Palavras novas:** com os termos usados e **Por onde continuar:** com o arquivo para ler primeiro.\n")
 	case levelRapido:
-		b.WriteString("Formato: rápido. No máximo cinco linhas de texto, sem seções nem introdução. Numa revisão, " +
-			"aponte só os problemas de gravidade média ou maior, cada um em uma frase.\n")
+		b.WriteString("Formato: rápido. Até 5 linhas: a primeira diz o essencial (o efeito da mudança); depois, no " +
+			"máximo 3 tópicos curtos. Sem títulos. Numa revisão, aponte só os problemas de gravidade média ou maior.\n")
 	}
 	b.WriteString("</modo>\n\n")
 	return b.String()
 }
 
+// Instruções da tarefa de explicar: o efeito, o antes e depois, o porquê e o impacto, em
+// rótulos curtos (cabem melhor no painel do chat que títulos).
+var explainInstructions = "Tarefa: explicar, sem procurar problemas, para quem vai trabalhar nesse código. Estrutura " +
+	"(omita a parte que não se aplicar):\n" +
+	"- primeira linha, em negrito: o que muda na prática, numa frase;\n" +
+	"- **Antes → depois:** o comportamento antes e depois da mudança (fora de um commit: o papel do código no projeto);\n" +
+	"- **Por quê:** a intenção, a partir da mensagem do commit e do código;\n" +
+	"- **Como funciona:** o caminho principal em 3 a 6 tópicos, cada um com a função e o arquivo:linha;\n" +
+	"- **Impacto:** quem usa isso, o que muda para quem chama e o que merece atenção.\n" +
+	"Agrupe por ideia, não por arquivo.\n"
+
 // Instruções da tarefa de revisão (a parte de achados muda com a ferramenta registrar_achado).
 var reviewInstructions = "Tarefa: revisar. Procure problemas nas mudanças, a partir do <diff>; abra código só se um " +
 	"problema depender de algo fora dele, tudo numa rodada de read_files com trechos (há um limite de rodadas de " +
-	"leitura por pergunta). Escreva primeiro um resumo de uma ou duas frases. Depois chame registrar_achado uma vez " +
+	"leitura por pergunta). Escreva primeiro um resumo de uma ou duas frases: o que a mudança faz na prática e o " +
+	"veredito (pronta, ou o principal risco). Depois chame registrar_achado uma vez " +
 	"para cada problema, do mais grave para o menos grave, todos na mesma resposta, e não repita no texto o que já " +
 	"registrou. Se estiver tudo bem, diga isso no resumo e não registre nada. Se não puder usar ferramentas, liste os " +
 	"pontos no texto, cada um com arquivo:linha, o problema, por que importa e a sugestão.\n"
