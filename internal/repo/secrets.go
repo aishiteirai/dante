@@ -71,6 +71,10 @@ var secretPatterns = []*regexp.Regexp{
 // chave = "valor" para nomes como password, secret, token, api_key.
 var assignPattern = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.\-]*(password|passwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key)[A-Za-z0-9_.\-]*)(\s*[:=]\s*)(["']?)([^\s"'` + "`" + `,;]{8,})`)
 
+// Valores sem aspas que são código, não segredos: caminhos de identificadores
+// (ch.Usage.PromptTokens) e nomes em camelCase ou PascalCase (newToken, PromptTokens).
+var codeValue = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$|^[a-z]+([A-Z][a-z0-9]*)+$|^([A-Z][a-z0-9]+){2,}$`)
+
 // Redact mascara valores que parecem segredos e diz quantos foram mascarados.
 func Redact(s string) (string, int) {
 	n := 0
@@ -79,9 +83,13 @@ func Redact(s string) (string, int) {
 	}
 	s = assignPattern.ReplaceAllStringFunc(s, func(m string) string {
 		parts := assignPattern.FindStringSubmatch(m)
-		value := parts[5]
+		key, quote, value := strings.ToLower(parts[1]), parts[4], parts[5]
 		// Referências a variáveis e chamadas não são segredos: os.Getenv("X"), ${X}, process.env.X.
 		if strings.ContainsAny(value, "()${}«") || strings.HasPrefix(value, "process.env") {
+			return m
+		}
+		// Contagens de tokens (InputTokens, max_tokens) e código sem aspas também não.
+		if strings.HasSuffix(key, "tokens") || (quote == "" && codeValue.MatchString(value)) {
 			return m
 		}
 		n++

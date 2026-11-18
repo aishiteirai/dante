@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aishiteirai/dante/internal/config"
@@ -112,6 +113,8 @@ func (m *model) resetChat() {
 	m.diffSent, m.diffPending = "", ""
 	m.refs, m.refIdx = nil, 0
 	m.approval = nil
+	m.packed.reset()
+	m.tipShown = false
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -135,8 +138,9 @@ func (m *model) ensureChat() error {
 		System: m.buildSystemPrompt(),
 		// As ferramentas de escrita vão em toda conversa (a lista não pode mudar no meio dela);
 		// no modo ler, elas recusam.
-		Tools:  append(append(repo.Tools(), findingToolDef()), repo.WriteTools()...),
-		Exec:   m.writes().wrap(m.repo, withFindings(m.repo.Executor(func() string { return *sendTo }))),
+		Tools: append(append(repo.Tools(), findingToolDef()), repo.WriteTools()...),
+		Exec: m.writes().wrap(m.repo, withFindings(withPacked(m.packed, sendTo,
+			m.repo.Executor(func() string { return *sendTo })))),
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
 		ContextTokens: m.effectiveContext(),
@@ -241,6 +245,14 @@ func (m *model) diffBlock(scope string) string {
 		return "" // já enviado nesta conversa (o do alvo inteiro cobre os arquivos)
 	}
 	limit := m.diffLimit()
+	// Explicar rápido não precisa do diff inteiro: os arquivos que ficam de fora vão como
+	// lista, com as funções alteradas, e o modelo pede o diff de um deles se precisar.
+	switch {
+	case m.level == levelRapido:
+		limit = min(limit, 6000)
+	case m.task == taskExplicar:
+		limit = min(limit, 12000)
+	}
 	if scope != "" {
 		d, err := m.repo.DiffForModel(m.target, scope, repo.DiffContextLines)
 		if err != nil || strings.TrimSpace(d) == "" {
@@ -251,6 +263,7 @@ func (m *model) diffBlock(scope string) string {
 				"leia os trechos que importam.</diff>\n\n", scope, len(d)/1024)
 		}
 		m.diffPending = key // vira diffSent quando a resposta terminar sem erro
+		m.markPacked(scope)
 		return "<diff de " + scope + ">\n" + strings.TrimRight(d, "\n") + "\n</diff>\n\n"
 	}
 	p, err := m.repo.ReviewDiff(m.target, limit)
@@ -260,6 +273,9 @@ func (m *model) diffBlock(scope string) string {
 	var b strings.Builder
 	if p.Included > 0 {
 		b.WriteString("<diff do alvo>\n" + strings.TrimRight(p.Diff, "\n") + "\n</diff>\n")
+		for _, f := range p.Files {
+			m.markPacked(f)
+		}
 	}
 	if len(p.Left) > 0 {
 		b.WriteString("<fora_do_diff>\nAlterados, mas sem o diff acima (peça git_diff com path se precisar):\n")
@@ -268,7 +284,15 @@ func (m *model) diffBlock(scope string) string {
 				fmt.Fprintf(&b, "… e mais %d\n", len(p.Left)-60)
 				break
 			}
-			fmt.Fprintf(&b, "- %s (+%d −%d, %s)\n", l.Path, l.Add, l.Del, l.Why)
+			fmt.Fprintf(&b, "- %s (+%d −%d, %s)", l.Path, l.Add, l.Del, l.Why)
+			if len(l.Funcs) > 0 {
+				fs := l.Funcs[:min(len(l.Funcs), 6)]
+				b.WriteString(": " + strings.Join(fs, ", "))
+				if len(l.Funcs) > 6 {
+					b.WriteString(", …")
+				}
+			}
+			b.WriteString("\n")
 		}
 		b.WriteString("</fora_do_diff>\n")
 	}
@@ -650,15 +674,25 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 		if m.diffPending != "" {
 			m.diffSent = m.diffPending
 		}
+		m.packed.commit()
+		// Cada pergunta reenvia a conversa inteira: quando ela pesa, sugere começar outra.
+		if avg := msg.usage.InputTokens / int64(max(msg.usage.Rounds, 1)); avg > 20000 && !m.tipShown {
+			m.tipShown = true
+			m.entries = append(m.entries, entry{kind: eNotice, text: fmt.Sprintf("dica: cada pergunta reenvia a conversa "+
+				"inteira (~%s tokens por requisição agora); para um assunto novo, ctrl+n começa uma conversa limpa",
+				humanTokens(avg))})
+		}
 		// Commit conversado conta como revisado no painel de commits.
 		if m.target != repo.WorkTree && m.reviewed != nil && !m.reviewed[m.target] {
 			m.reviewed[m.target] = true
 			saveReviewed(m.repo.Root, m.reviewed)
 		}
 	case msg.err == context.Canceled:
+		m.packed.rollback()
 		m.entries = append(m.entries, entry{kind: eNotice, text: "resposta cancelada"})
 		m.status = ""
 	default:
+		m.packed.rollback()
 		m.entries = append(m.entries, entry{kind: eError, text: msg.err.Error()})
 		if strings.Contains(msg.err.Error(), "chave") {
 			m.setErr("problema com a chave: pressione m e depois c para cadastrar outra")
@@ -865,4 +899,94 @@ func usageLine(u llm.Usage) string {
 		in += ", " + humanTokens(u.CachedTokens) + " do cache"
 	}
 	return s + " (" + in + " · saída " + humanTokens(u.OutputTokens) + ")"
+}
+
+// ---- diffs já enviados na conversa ----
+
+// packedDiffs guarda os diffs por arquivo que já foram na mensagem, para o modelo não
+// pagar por eles de novo com git_diff. É compartilhado com o executor (outra goroutine).
+type packedDiffs struct {
+	mu      sync.Mutex
+	sent    map[string]bool
+	pending []string // da mensagem em andamento: valem quando a resposta termina bem
+}
+
+func newPackedDiffs() *packedDiffs { return &packedDiffs{sent: map[string]bool{}} }
+
+func (p *packedDiffs) has(k string) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.sent[k]
+}
+
+func (p *packedDiffs) commit() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.pending = nil
+	p.mu.Unlock()
+}
+
+// rollback desfaz os da mensagem que falhou (ela sai do histórico).
+func (p *packedDiffs) rollback() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	for _, k := range p.pending {
+		delete(p.sent, k)
+	}
+	p.pending = nil
+	p.mu.Unlock()
+}
+
+func (p *packedDiffs) reset() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.sent, p.pending = map[string]bool{}, nil
+	p.mu.Unlock()
+}
+
+func (m *model) markPacked(path string) {
+	if m.packed == nil {
+		m.packed = newPackedDiffs()
+	}
+	k := m.target + "\x00" + path
+	m.packed.mu.Lock()
+	if !m.packed.sent[k] {
+		m.packed.sent[k] = true
+		m.packed.pending = append(m.packed.pending, k)
+	}
+	m.packed.mu.Unlock()
+}
+
+// withPacked responde a um git_diff de um arquivo cujo diff já foi na mensagem, sem
+// repeti-lo. Com mais linhas de contexto do que o enviado, o diff é gerado normalmente.
+func withPacked(p *packedDiffs, target *string, next llm.Executor) llm.Executor {
+	return func(ctx context.Context, call llm.ToolCall) (string, bool) {
+		if call.Name == "git_diff" {
+			var a struct {
+				Path    string `json:"path"`
+				Ref     string `json:"ref"`
+				Context int    `json:"context_lines"`
+			}
+			_ = json.Unmarshal([]byte(call.Args), &a)
+			t := a.Ref
+			if t == "" {
+				t = *target
+			}
+			if a.Path != "" && a.Context <= repo.DiffContextLines && p.has(t+"\x00"+a.Path) {
+				return fmt.Sprintf("O diff de %s já veio no <diff> de uma mensagem anterior desta conversa (com %d linhas "+
+					"de contexto): use-o de lá. Para mais contexto, peça context_lines maior ou read_file com o trecho.",
+					a.Path, repo.DiffContextLines), false
+			}
+		}
+		return next(ctx, call)
+	}
 }

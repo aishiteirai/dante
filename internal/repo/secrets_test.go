@@ -37,20 +37,25 @@ func TestRedact(t *testing.T) {
 		`senha_curta = "abc"`,
 		"-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----",
 		`texto normal com token de acesso`,
+		`usage = Usage{InputTokens: ch.Usage.PromptTokens, OutputTokens: msg.Usage.OutputTokens}`,
+		`token = newSessionToken`,
+		`refreshToken: RefreshTokenValue`,
+		`password: hunter2hunter2`,
 	}, "\n")
 	out, n := Redact(in)
-	for _, vazou := range []string{"sk-ant-api03", "AKIAIOSFODNN7", "ghp_abc", "s3nh4", "MIIEow"} {
+	for _, vazou := range []string{"sk-ant-api03", "AKIAIOSFODNN7", "ghp_abc", "s3nh4", "MIIEow", "hunter2"} {
 		if strings.Contains(out, vazou) {
 			t.Errorf("vazou %q:\n%s", vazou, out)
 		}
 	}
-	for _, fica := range []string{`os.Getenv("API_KEY")`, `senha_curta = "abc"`, "texto normal com token de acesso", "db_password = \""} {
+	for _, fica := range []string{`os.Getenv("API_KEY")`, `senha_curta = "abc"`, "texto normal com token de acesso", "db_password = \"",
+		"InputTokens: ch.Usage.PromptTokens", "OutputTokens: msg.Usage.OutputTokens", "token = newSessionToken", "refreshToken: RefreshTokenValue"} {
 		if !strings.Contains(out, fica) {
 			t.Errorf("deveria manter %q:\n%s", fica, out)
 		}
 	}
-	if n != 5 {
-		t.Errorf("mascarados = %d, esperava 5:\n%s", n, out)
+	if n != 6 {
+		t.Errorf("mascarados = %d, esperava 6:\n%s", n, out)
 	}
 }
 

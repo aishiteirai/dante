@@ -25,7 +25,7 @@ func mapPath(root string) string {
 	return filepath.Join(dataHome(), "mapas", repoDisplayName(root)+"-"+hex.EncodeToString(h[:4])+".json")
 }
 
-const compactMapBytes = 12000
+const compactMapBytes = 5000 // ~1,5 mil tokens em cada requisição da conversa
 
 type mapChoice struct {
 	prov  config.Provider
