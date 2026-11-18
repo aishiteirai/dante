@@ -41,6 +41,8 @@ func TestDetectMode(t *testing.T) {
 		{"revise util.py", "revisar", ""},
 		{"Explique em detalhes a poda de contexto", "explicar", "normal"},
 		{"obrigado!", "", ""},
+		{"do que se trata esse ultimo commit", "explicar", ""},
+		{"o que mudou nesse commit?", "explicar", ""},
 	}
 	for _, c := range cases {
 		tk, lv := detectMode(c.text)

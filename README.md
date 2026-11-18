@@ -284,13 +284,30 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
   `arquivo:linha`) e **Impacto**. O modelo agrupa por ideia, não arquivo por arquivo. Num
   merge, ele recebe também as mensagens dos commits que o merge trouxe, onde está a intenção.
 - **Revisão:** um RESUMO com o que a mudança faz e o veredito, e um cartão por problema, com a gravidade em cor, o local, a
-  explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Se ele
-  não usar a ferramenta, como acontece com alguns modelos locais, a revisão vem em texto.
+  explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Alguns
+  modelos pequenos escrevem a chamada como texto (`registrar_achado(arquivo="…", …)`) em vez
+  de usar a ferramenta: o dante reconhece e transforma em cartões do mesmo jeito.
 - **Referências:** cada `arquivo:linha` citado ganha um número `[n]`. `ctrl+g` lista as
   referências, e o número, ou `enter`, mostra o trecho no Visualizador, com a linha marcada
   por `▶`: no diff, se o arquivo mudou no commit, ou o arquivo inteiro na aba Documento.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
+
+### O que faz esta função?
+
+Para entender uma função sem gastar uma conversa inteira:
+
+- **No Visualizador:** clique numa linha da função (ela ganha a marca ▶) e aperte `f`. Sem
+  clique, vale o trecho atual do diff, ou a primeira linha visível na aba Documento.
+- **No chat:** `/funcao NomeDaFuncao`, ou `/funcao` seguido do código colado. Uma mensagem com
+  uma função colada e "o que faz?" também vai por esse caminho.
+
+O dante acha a função e monta, sem gastar tokens, o pacote: o corpo (com o comentário que a
+documenta), **onde ela é usada** (até 8 chamadas, com a linha de código de cada uma) e as
+funções do projeto que ela chama. A pergunta vai numa conversa à parte, sem ferramentas e
+sem o histórico do chat: costuma ficar entre 1 e 3 mil tokens. A resposta diz o que a função
+faz, como funciona, onde é usada e os cuidados, com referências `[n]` para abrir as linhas.
+A conversa principal continua como estava.
 
 ### Mapa do projeto e tour
 

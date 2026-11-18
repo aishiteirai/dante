@@ -37,6 +37,7 @@ var chatCommands = []chatCommand{
 	{"/ler", "o modelo só lê e sugere (padrão)"},
 	{"/editar", "o modelo pode alterar arquivos, com a sua aprovação"},
 	{"/permissoes", "o que o modelo pode fazer no modo editar"},
+	{"/funcao", "explica uma função (pelo nome ou colada) numa pergunta barata"},
 	{"/mapa", "gera o mapa do projeto com um modelo barato (mostra o custo antes)"},
 	{"/tour", "percorre o mapa do projeto, capítulo por capítulo"},
 }
@@ -114,7 +115,9 @@ var (
 	kwNormal   = []string{"detalhad", "aprofund", "com detalhes", "em detalhe"}
 	kwExplicar = []string{"explique", "explica", "o que faz", "o que esse", "o que essa", "o que este", "o que isso",
 		"como funciona", "para que serve", "pra que serve", "o que e ", "me ajuda a entender", "quero entender",
-		"me apresenta", "como esta organizado", "como e organizado"}
+		"me apresenta", "como esta organizado", "como e organizado", "do que se trata", "se trata de", "sobre o que",
+		"o que mudou", "o que muda", "o que foi feito", "o que foi alterado", "o que aconteceu", "me conta", "me conte",
+		"resuma o commit", "descreva", "o que tem nesse", "o que tem neste"}
 	kwRevisar = []string{"revise", "revisa", "revisao", "review", "tem bug", "tem algum bug", "tem algum problema",
 		"tem problema", "algum erro", "esta certo", "ta certo", "esta correto", "pode melhorar", "o que melhorar",
 		"falha de seguranca", "vulnerab"}

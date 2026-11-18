@@ -378,7 +378,7 @@ func (m model) helpLine() string {
 		if m.vtab == vtMap {
 			return base + "←→ capítulo · [ ] aba · ctrl+g referências · enter chat"
 		}
-		return base + "n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
+		return base + "clique + f explica a função · n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
 	case pChat:
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"

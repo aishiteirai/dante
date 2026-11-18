@@ -361,6 +361,16 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.setInfo("aguarde a resposta terminar (esc cancela)")
 		return m, nil
 	}
+	// /funcao Nome, ou /funcao seguido do código colado: explica a função numa pergunta
+	// avulsa e barata. Uma mensagem com uma função colada e "o que faz" vai pelo mesmo caminho.
+	if f := fold(text); strings.HasPrefix(f, "/funcao") {
+		arg := strings.TrimSpace(text[len(strings.Fields(text)[0]):])
+		m.input.Reset()
+		return m.explainFuncText(arg)
+	}
+	if !strings.HasPrefix(text, "/") && asksAboutPastedFunc(text) {
+		return m.explainFuncText(text)
+	}
 	// Comandos de modo no começo da mensagem; sem eles, a detecção pelo pedido.
 	cmds, rest, unknown := parseCommands(text)
 	if unknown != "" {
@@ -659,6 +669,8 @@ func describeCall(c llm.ToolCall) string {
 func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 	m.streaming, m.thinking = false, false
 	m.cancel = nil
+	isolated := m.isolated
+	m.isolated = false
 	if m.approval != nil { // cancelada com uma proposta esperando
 		m.approval = nil
 		for i := range m.entries {
@@ -675,6 +687,8 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 			text: plural(len(g.changes), "mudança aplicada", "mudanças aplicadas") + " nesta resposta · ctrl+z desfaz"})
 	}
 	m.usage.Add(msg.usage)
+	// Achados que o modelo escreveu como texto em vez de usar a ferramenta viram cartões.
+	m.recoverTextFindings()
 	// Ferramentas que ficaram sem resultado (cancelamento).
 	for i := range m.entries {
 		if m.entries[i].kind == eTool && !m.entries[i].done {
@@ -698,8 +712,9 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 				"inteira (~%s tokens por requisição agora); para um assunto novo, ctrl+n começa uma conversa limpa",
 				humanTokens(avg))})
 		}
-		// Commit conversado conta como revisado no painel de commits.
-		if m.target != repo.WorkTree && m.reviewed != nil && !m.reviewed[m.target] {
+		// Commit conversado conta como revisado no painel de commits (uma pergunta avulsa
+		// sobre uma função, não).
+		if !isolated && m.target != repo.WorkTree && m.reviewed != nil && !m.reviewed[m.target] {
 			m.reviewed[m.target] = true
 			saveReviewed(m.repo.Root, m.reviewed)
 		}
