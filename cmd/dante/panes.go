@@ -15,6 +15,7 @@ const (
 	modeResize
 	modeRefs  // lista de referências (ctrl+g)
 	modePerms // permissões do agente (/permissoes ou ctrl+space p)
+	modeMap   // confirmação do /mapa
 )
 
 const resizeStep = 0.03
@@ -214,6 +215,8 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateRefKeys(key)
 	case modePerms:
 		return m.updatePermKeys(key)
+	case modeMap:
+		return m.updateMapKeys(key)
 	}
 
 	if key == "ctrl+z" { // desfaz as mudanças da última resposta

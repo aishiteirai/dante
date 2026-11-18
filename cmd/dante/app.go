@@ -11,6 +11,7 @@ import (
 
 	"github.com/aishiteirai/dante/internal/config"
 	"github.com/aishiteirai/dante/internal/llm"
+	"github.com/aishiteirai/dante/internal/mapa"
 	"github.com/aishiteirai/dante/internal/repo"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -142,6 +143,11 @@ type model struct {
 	approval    *pendingApproval // mudança esperando s/n/t/e
 	undo        []undoGroup      // mudanças de cada resposta, para ctrl+z
 	permIdx     int              // seleção no painel de permissões
+	mapData     *mapa.Map        // mapa do projeto salvo
+	mapGen      *mapState        // confirmação ou geração do mapa em andamento
+	mapChapter  int              // capítulo do tour na aba Mapa
+	mapCache    string
+	mapCacheKey string
 
 	// opções da linha de comando
 	flagModel string
@@ -311,6 +317,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cancel != nil {
 				m.cancel()
 			}
+			if m.mapGen != nil && m.mapGen.cancel != nil {
+				m.mapGen.cancel()
+			}
 			if m.pullCancel != nil {
 				m.pullCancel()
 			}
@@ -318,11 +327,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case spinner.TickMsg:
-		if m.opening || m.streaming || m.keyChecking || m.pulling != "" {
+		if m.opening || m.streaming || m.keyChecking || m.pulling != "" || (m.mapGen != nil && m.mapGen.running) {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 			if m.streaming {
 				m.refreshChat()
+			}
+			if m.mapGen != nil && m.mapGen.running && m.vtab == vtMap {
+				m.renderPreview()
 			}
 			return m, cmd
 		}
@@ -401,6 +413,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case approvalEditedMsg:
 		return m.onApprovalEdited(msg)
 
+	case mapScannedMsg:
+		return m.onMapScanned(msg)
+
+	case mapEventMsg:
+		return m.onMapEvent(msg)
+
+	case mapDoneMsg:
+		return m.onMapDone(msg)
+
 	case editorDoneMsg:
 		if msg.err != nil {
 			m.setErr("editor: " + msg.err.Error())
@@ -447,6 +468,8 @@ func (m model) onRepoOpened(msg repoOpenedMsg) (tea.Model, tea.Cmd) {
 	m.rows, m.files, m.filesFor = nil, nil, ""
 	m.logIdx, m.logOff, m.fileIdx, m.fileOff = 0, 0, 0, 0
 	m.stats, m.reviewed = nil, loadReviewed(msg.root)
+	m.mapData, _ = mapa.Load(mapPath(msg.root))
+	m.mapGen, m.mapCacheKey, m.mapChapter = nil, "", 0
 	m.docRaw, m.docTitle = "", ""
 	m.clearPreview()
 	m.target = repo.WorkTree

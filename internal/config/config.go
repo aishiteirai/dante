@@ -33,6 +33,8 @@ type Provider struct {
 	// Usa a chave cadastrada de outro provedor (ex.: OpenCode Go usa a do OpenCode Console).
 	ChaveDe   string     `json:"chave_de,omitempty"`
 	Sugeridos []Sugestao `json:"sugeridos,omitempty"` // modelos para baixar (Ollama)
+	// Modelo barato deste provedor, oferecido para gerar o mapa do projeto (/mapa).
+	ModeloMapa string `json:"modelo_mapa,omitempty"`
 
 	salva string // chave cadastrada pelo dante (credenciais.json)
 }
@@ -109,6 +111,7 @@ type Choice struct {
 type Config struct {
 	Provedores   []Provider `json:"provedores"`
 	UltimoModelo *Choice    `json:"ultimo_modelo,omitempty"`
+	MapaModelo   *Choice    `json:"mapa_modelo,omitempty"` // último modelo usado no /mapa
 	Esforco      string     `json:"esforco"`
 	Confiados    []string   `json:"repositorios_confiados,omitempty"`
 	// Arquivos que o modelo não pode ler, além dos padrões do dante (.env, *.pem, id_rsa...),
@@ -145,13 +148,13 @@ func Defaults() Config {
 		Provedores: []Provider{
 			{ID: "claude", Nome: "Claude (Anthropic)", Tipo: llm.KindAnthropic, ChaveEnv: "ANTHROPIC_API_KEY",
 				SiteChave: "https://platform.claude.com/settings/keys",
-				Modelos:   []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}},
+				Modelos:   []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}, ModeloMapa: "claude-haiku-5-5"},
 			{ID: "deepseek", Nome: "DeepSeek", Tipo: llm.KindOpenAI, URL: "https://api.deepseek.com/v1",
-				ChaveEnv: "DEEPSEEK_API_KEY", SiteChave: "https://platform.deepseek.com/api_keys", Contexto: 128000, Modelos: []string{"deepseek-chat", "deepseek-reasoner"}},
+				ChaveEnv: "DEEPSEEK_API_KEY", SiteChave: "https://platform.deepseek.com/api_keys", Contexto: 128000, Modelos: []string{"deepseek-chat", "deepseek-reasoner"}, ModeloMapa: "deepseek-chat"},
 			{ID: "qwen", Nome: "Qwen (Alibaba Cloud)", Tipo: llm.KindOpenAI,
 				URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", ChaveEnv: "DASHSCOPE_API_KEY",
 				SiteChave: "Alibaba Cloud Model Studio → API Key", Contexto: 128000,
-				Modelos: []string{"qwen3-coder-plus", "qwen-max", "qwen-plus"}},
+				Modelos: []string{"qwen3-coder-plus", "qwen-max", "qwen-plus"}, ModeloMapa: "qwen-plus"},
 			{ID: "openrouter", Nome: "OpenRouter · modelos grátis", Tipo: llm.KindOpenAI,
 				URL: "https://openrouter.ai/api/v1", ChaveEnv: "OPENROUTER_API_KEY",
 				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis", Contexto: 32000},
@@ -161,12 +164,12 @@ func Defaults() Config {
 				URL: "https://opencode.ai/inference/openai/v1", URLModelos: "https://opencode.ai/inference/v1/models",
 				ChaveEnv: "OPENCODE_API_KEY", SiteChave: "https://opencode.ai/console → Account → Personal API keys",
 				Listar: true, Filtro: "sem_gratis", Contexto: 128000, CabecalhoSessao: "x-opencode-session",
-				Modelos: []string{"deepseek-v4-pro", "deepseek-v4.1-flash", "qwen3.8-max", "kimi-k3", "glm-5.3", "minimax-m3"}},
+				Modelos: []string{"deepseek-v4-pro", "deepseek-v4.1-flash", "qwen3.8-max", "kimi-k3", "glm-5.3", "minimax-m3"}, ModeloMapa: "deepseek-v4.1-flash"},
 			{ID: "opencode-go", Nome: "OpenCode Go · assinatura", Tipo: llm.KindOpenAI,
 				URL: "https://opencode.ai/inference/go/openai/v1", URLModelos: "https://opencode.ai/inference/go/v1/models",
 				ChaveEnv: "OPENCODE_API_KEY", ChaveDe: "opencode", SiteChave: "https://opencode.ai/console → assine o Go → Personal API keys",
 				Listar: true, Filtro: "sem_gratis", Contexto: 128000, CabecalhoSessao: "x-opencode-session",
-				Modelos: []string{"kimi-k3", "deepseek-v4-pro", "deepseek-v4.1-flash", "minimax-m3", "glm-5.3", "qwen3.8-max"}},
+				Modelos: []string{"kimi-k3", "deepseek-v4-pro", "deepseek-v4.1-flash", "minimax-m3", "glm-5.3", "qwen3.8-max"}, ModeloMapa: "deepseek-v4.1-flash"},
 			{ID: "ollama", Nome: "Ollama (local, grátis)", Tipo: llm.KindOllama, URL: "http://localhost:11434",
 				Listar: true, Local: true, Contexto: 16384, Sugeridos: []Sugestao{
 					{Modelo: "qwen2.5-coder:7b", Tamanho: "4,7 GB", Nota: "bom para começar; ~8 GB de RAM"},
@@ -206,6 +209,9 @@ func (c *Config) mergeDefaults() (changed bool) {
 			}
 			if p.Contexto == 0 && d.Contexto > 0 {
 				p.Contexto, changed = d.Contexto, true
+			}
+			if p.ModeloMapa == "" && d.ModeloMapa != "" {
+				p.ModeloMapa, changed = d.ModeloMapa, true
 			}
 			if p.SiteChave == "" && d.SiteChave != "" {
 				p.SiteChave, changed = d.SiteChave, true

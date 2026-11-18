@@ -37,6 +37,8 @@ var chatCommands = []chatCommand{
 	{"/ler", "o modelo só lê e sugere (padrão)"},
 	{"/editar", "o modelo pode alterar arquivos, com a sua aprovação"},
 	{"/permissoes", "o que o modelo pode fazer no modo editar"},
+	{"/mapa", "gera o mapa do projeto com um modelo barato (mostra o custo antes)"},
+	{"/tour", "percorre o mapa do projeto, capítulo por capítulo"},
 }
 
 func modeLabel(t taskMode, l levelMode) string { return taskNames[t] + " · " + levelNames[l] }
@@ -47,6 +49,8 @@ type cmdSet struct {
 	level *levelMode
 	agent *agentMode
 	perms bool // abrir o painel de permissões
+	mapa  bool // gerar ou atualizar o mapa do projeto
+	tour  bool // percorrer o mapa
 }
 
 // parseCommands lê os comandos no começo da mensagem ("/explicar /aprendiz como funciona
@@ -79,6 +83,10 @@ func parseCommands(text string) (c cmdSet, rest, unknown string) {
 			c.agent = &v
 		case "/permissoes", "/permissao":
 			c.perms = true
+		case "/mapa":
+			c.mapa = true
+		case "/tour":
+			c.tour = true
 		default:
 			return cmdSet{}, text, words[i]
 		}
