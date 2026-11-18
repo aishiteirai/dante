@@ -63,8 +63,11 @@ Windows, Linux e macOS (amd64 e arm64) e publica uma Release com os binários e 
 git tag v0.5.0 && git push origin v0.5.0
 ```
 
-Para só compilar, sem publicar nada, rode o workflow pela aba **Actions → release → Run
-workflow**: os binários ficam como artefato da execução. Localmente, `make dist VERSAO=v0.5.0`
+Também dá para publicar sem usar o git: na aba **Actions → release → Run workflow**,
+escolha a branch (`main`) e escreva a tag no campo "tag" (ex.: `v0.6.0-alpha`). Se a tag não
+existe, o workflow a cria no último commit da branch; se já existe, recompila e anexa os
+arquivos de novo. Com o campo vazio, ele só compila, e os binários ficam como artefato da
+execução. Localmente, `make dist VERSAO=v0.5.0`
 gera os mesmos arquivos em `dist/`.
 
 ## Modelos

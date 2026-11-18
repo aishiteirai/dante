@@ -5,8 +5,9 @@
 #   Release ainda não existe, ela é criada; se já existe (criada pelo site), os arquivos são
 #   acrescentados. Tags com "-" (ex.: v0.5.0-alpha) viram pré-release.
 # - Rodar à mão (aba Actions → release → Run workflow):
-#     * com uma tag no campo "tag": compila o código daquela tag e publica na Release dela
-#       (serve para refazer uma publicação que falhou);
+#     * com uma tag no campo "tag": se a tag já existe, compila o código dela e publica na
+#       Release dela (serve para refazer uma publicação que falhou); se não existe, compila a
+#       branch escolhida em "Use workflow from" e cria a tag e a Release nesse commit;
 #     * sem tag: só compila e deixa os binários como artefato da execução.
 name: release
 
@@ -16,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag a publicar (vazio = só compilar, sem publicar)"
+        description: "Tag a publicar, ex.: v0.6.0 (criada na branch escolhida se ainda não existir; vazio = só compilar)"
         required: false
         default: ""
 
@@ -31,7 +32,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0 # tags e histórico, para achar a tag e gerar as notas
+
+      - name: Escolhe o código
+        run: |
+          if [ -z "$TAG" ]; then exit 0; fi
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "::error::A tag precisa começar com v e um número (ex.: v0.6.0), não \"$TAG\"."; exit 1 ;;
+          esac
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            git checkout -q "$TAG"
+            echo "Compilando a tag existente $TAG ($(git rev-parse --short HEAD))."
+          else
+            echo "A tag $TAG não existe: ela será criada no commit $(git rev-parse --short HEAD) de ${GITHUB_REF_NAME}."
+          fi
+          echo "ALVO=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v6
         with:
@@ -59,5 +75,6 @@ jobs:
             echo "A Release $TAG já existe: anexando os arquivos."
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --title "dante $TAG" --generate-notes --verify-tag $pre
+            # Sem a tag, o gh cria a tag no commit compilado (--target).
+            gh release create "$TAG" dist/* --title "dante $TAG" --generate-notes --target "$ALVO" $pre
           fi
