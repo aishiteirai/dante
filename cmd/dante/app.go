@@ -116,9 +116,11 @@ type model struct {
 	prov        config.Provider
 	modelName   string
 	chat        llm.Chat
-	sendTo      *string // alvo usado pelas ferramentas durante a resposta
-	diffSent    string  // alvo/arquivo cujo diff já foi enviado nesta conversa
-	diffPending string  // diff enviado na mensagem em andamento
+	sendTo      *string   // alvo usado pelas ferramentas durante a resposta
+	diffSent    string    // alvo/arquivo cujo diff já foi enviado nesta conversa
+	task        taskMode  // revisar ou explicar
+	level       levelMode // normal, aprendiz ou rápido
+	diffPending string    // diff enviado na mensagem em andamento
 	entries     []entry
 	input       textarea.Model
 	chatView    viewport.Model

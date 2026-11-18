@@ -226,6 +226,13 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if key == "tab" && m.focus == pChat {
+		if sugg := commandSuggestions(m.input.Value()); len(sugg) > 0 {
+			m.input.SetValue(sugg[0].name + " ")
+			m.input.CursorEnd()
+			return m, nil
+		}
+	}
 	switch key {
 	case "tab":
 		return m.cycleFocus(1)
