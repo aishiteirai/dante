@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -302,10 +304,18 @@ func TestGastoDaResposta(t *testing.T) {
 	t.Setenv("DANTE_CONFIG", t.TempDir())
 	m := newModel(config.Defaults(), "", "")
 	m.chatView.Width = 80
-	nm, _ := m.onChatDone(chatDoneMsg{usage: llm.Usage{InputTokens: 55000, OutputTokens: 3200}})
+	nm, _ := m.onChatDone(chatDoneMsg{usage: llm.Usage{InputTokens: 55000, OutputTokens: 3200, CachedTokens: 40000, Rounds: 2}})
 	m = nm.(model)
-	if got := m.entries[len(m.entries)-1]; got.kind != eUsage || got.text != "58,2 mil tokens nesta resposta (entrada 55,0 mil · saída 3,2 mil)" {
+	if got := m.entries[0]; got.kind != eUsage || got.text != "58,2 mil tokens nesta resposta · 2 rodadas (entrada 55,0 mil, 40,0 mil do cache · saída 3,2 mil)" {
 		t.Fatalf("entrada = %+v", got)
+	}
+	// Com ~27 mil tokens por requisição, a dica de ctrl+n aparece (uma vez por conversa).
+	if got := m.entries[len(m.entries)-1]; got.kind != eNotice || !strings.Contains(got.text, "ctrl+n") {
+		t.Fatalf("dica = %+v", got)
+	}
+	nm, _ = m.onChatDone(chatDoneMsg{usage: llm.Usage{InputTokens: 55000, Rounds: 2}})
+	if n := len(nm.(model).entries); n != 3 {
+		t.Fatalf("a dica deveria aparecer uma vez só: %d entradas", n)
 	}
 	if humanTokens(950) != "950" || humanTokens(1_250_000) != "1,25 mi" {
 		t.Fatal("humanTokens")
@@ -343,5 +353,33 @@ func TestEditorCommand(t *testing.T) {
 		if got := strings.Join(editorCommand(c.editor, c.goos, "f.go", 7), " "); got != c.want {
 			t.Errorf("editorCommand(%q, %s) = %q, queria %q", c.editor, c.goos, got, c.want)
 		}
+	}
+}
+
+func TestDiffJaEnviadoNaoRepete(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.repo = gitRepo(t)
+	m.target = repo.WorkTree
+	if b := m.diffBlock(""); !strings.Contains(b, "+x = 2") {
+		t.Fatalf("pacote: %s", b)
+	}
+	target := repo.WorkTree
+	exec := withPacked(m.packed, &target, func(context.Context, llm.ToolCall) (string, bool) { return "diff de novo", false })
+	call := func(args string) string {
+		out, _ := exec(context.Background(), llm.ToolCall{Name: "git_diff", Args: args})
+		return out
+	}
+	if out := call(`{"path":"a.py"}`); !strings.Contains(out, "já veio") {
+		t.Fatalf("git_diff repetido: %q", out)
+	}
+	if out := call(`{"path":"a.py","context_lines":10}`); out != "diff de novo" {
+		t.Fatal("com mais contexto, o diff é gerado")
+	}
+	// A resposta falhou: a mensagem sai do histórico, e o diff volta a ser pedido.
+	nm, _ := m.onChatDone(chatDoneMsg{err: fmt.Errorf("falhou")})
+	m = nm.(model)
+	if out := call(`{"path":"a.py"}`); out != "diff de novo" {
+		t.Fatal("depois de uma falha, o diff precisa ser gerado de novo")
 	}
 }

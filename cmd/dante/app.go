@@ -145,6 +145,8 @@ type model struct {
 	approval    *pendingApproval // mudança esperando s/n/t/e
 	undo        []undoGroup      // mudanças de cada resposta, para ctrl+z
 	permIdx     int              // seleção no painel de permissões
+	packed      *packedDiffs     // diffs por arquivo já enviados na conversa
+	tipShown    bool             // dica de ctrl+n já mostrada nesta conversa
 	mapData     *mapa.Map        // mapa do projeto salvo
 	mapGen      *mapState        // confirmação ou geração do mapa em andamento
 	mapChapter  int              // capítulo do tour na aba Mapa
@@ -197,6 +199,7 @@ func newModel(cfg config.Config, repoFlag, modelFlag string) model {
 		lay:       loadLayout(),
 		diffCtx:   defaultDiffCtx,
 		navOpen:   true,
+		packed:    newPackedDiffs(),
 	}
 	switch {
 	case repoFlag != "":
