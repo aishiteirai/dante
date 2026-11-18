@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Servidor no formato da API do Gemini compatível com OpenAI: lista "models/…", manda as
@@ -94,5 +95,49 @@ func TestModeloDescontinuado(t *testing.T) {
 	err := httpError(404, body, Provider{})
 	if !strings.Contains(err.Error(), "descontinuou o modelo gemini-2.5-pro") || !strings.Contains(err.Error(), "gemini-3.1-pro-preview") {
 		t.Fatalf("erro = %v", err)
+	}
+}
+
+func TestSobrecargaTentaDeNovo(t *testing.T) {
+	old := retryDelays
+	retryDelays = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	defer func() { retryDelays = old }()
+
+	falhas := 2
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n <= falhas {
+			w.WriteHeader(503)
+			fmt.Fprint(w, `[{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}]`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"oi"},"finish_reason":"stop"}]}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	chat, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m"})
+	var avisos []string
+	_, err := chat.Send(context.Background(), "oi", func(e Event) {
+		if e.Kind == EvNotice {
+			avisos = append(avisos, e.Text)
+		}
+	})
+	if err != nil || n != 3 || len(avisos) != 2 || !strings.Contains(avisos[0], "sobrecarregado (HTTP 503)") {
+		t.Fatalf("err=%v requisições=%d avisos=%v", err, n, avisos)
+	}
+
+	// Sempre sobrecarregado: desiste depois de 4 tentativas, com uma mensagem clara.
+	falhas, n = 100, 0
+	chat, _ = New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m"})
+	_, err = chat.Send(context.Background(), "oi", func(Event) {})
+	if err == nil || n != 4 || !strings.Contains(err.Error(), "troque o modelo (m)") || !strings.Contains(err.Error(), "4 tentativas") {
+		t.Fatalf("err=%v requisições=%d", err, n)
+	}
+	// O histórico continua válido depois da falha.
+	falhas, n = 0, 0
+	if _, err := chat.Send(context.Background(), "de novo", func(Event) {}); err != nil {
+		t.Fatal(err)
 	}
 }

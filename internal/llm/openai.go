@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -187,6 +188,61 @@ func (c *openAIChat) fit(current int, emit func(Event)) int {
 	return total
 }
 
+// Esperas entre as tentativas quando o provedor está sobrecarregado (variável para os testes).
+var retryDelays = []time.Duration{3 * time.Second, 8 * time.Second, 20 * time.Second}
+
+// retryable: sobrecarga ou instabilidade passageira do provedor.
+func retryable(status int) bool {
+	return status == 429 || status == 500 || status == 502 || status == 503 || status == 504
+}
+
+// post envia a requisição. Se o provedor responder que está sobrecarregado (429, 5xx),
+// espera e tenta de novo, avisando no chat; o Retry-After do provedor vale quando é curto.
+func (c *openAIChat) post(ctx context.Context, buf []byte, emit func(Event)) (*http.Response, error) {
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(c.p.BaseURL, "/")+"/chat/completions", bytes.NewReader(buf))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("User-Agent", UserAgent)
+		if c.p.SessionHeader != "" {
+			req.Header.Set(c.p.SessionHeader, c.session)
+		}
+		if k := c.p.Key(); k != "" {
+			req.Header.Set("Authorization", "Bearer "+k)
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("não consegui conectar em %s: %w", c.p.BaseURL, err)
+		}
+		if resp.StatusCode == 200 {
+			return resp, nil
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		if !retryable(resp.StatusCode) || attempt >= len(retryDelays) {
+			err := httpError(resp.StatusCode, b, c.p)
+			if retryable(resp.StatusCode) {
+				err = fmt.Errorf("%w (depois de %d tentativas)", err, attempt+1)
+			}
+			return nil, err
+		}
+		wait := retryDelays[attempt]
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 && time.Duration(s)*time.Second <= 30*time.Second {
+			wait = time.Duration(s) * time.Second
+		}
+		emit(Event{Kind: EvNotice, Text: fmt.Sprintf("o provedor está sobrecarregado (HTTP %d); tentando de novo em %s (%d de %d)",
+			resp.StatusCode, wait.Round(time.Second), attempt+2, len(retryDelays)+1)})
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
 // complete faz uma requisição em streaming e devolve a mensagem do assistente montada.
 func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage, string, Usage, error) {
 	var usage Usage
@@ -203,28 +259,11 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 		body["max_tokens"] = c.opts.MaxTokens
 	}
 	buf, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(c.p.BaseURL, "/")+"/chat/completions", bytes.NewReader(buf))
+	resp, err := c.post(ctx, buf, emit)
 	if err != nil {
 		return oaMessage{}, "", usage, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("User-Agent", UserAgent)
-	if c.p.SessionHeader != "" {
-		req.Header.Set(c.p.SessionHeader, c.session)
-	}
-	if k := c.p.Key(); k != "" {
-		req.Header.Set("Authorization", "Bearer "+k)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return oaMessage{}, "", usage, fmt.Errorf("não consegui conectar em %s: %w", c.p.BaseURL, err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return oaMessage{}, "", usage, httpError(resp.StatusCode, b, c.p)
-	}
 
 	var content, reasoning strings.Builder
 	type partial struct {
@@ -384,7 +423,10 @@ func httpError(status int, body []byte, p Provider) error {
 		}
 		return fmt.Errorf("modelo ou endpoint não encontrado: %s", msg)
 	case 429:
-		return fmt.Errorf("limite de requisições atingido: %s", msg)
+		return fmt.Errorf("limite de requisições atingido: espere um pouco ou troque o modelo (m) · %s", msg)
+	case 500, 502, 503, 504:
+		return fmt.Errorf("o provedor está sobrecarregado ou instável (HTTP %d): tente de novo em instantes ou troque "+
+			"o modelo (m); modelos menores, como os \"flash\", costumam estar mais livres · %s", status, msg)
 	}
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
