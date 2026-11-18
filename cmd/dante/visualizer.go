@@ -24,6 +24,7 @@ type vTab int
 const (
 	vtDiff vTab = iota
 	vtDoc
+	vtMap // mapa do projeto e tour
 )
 
 const (
@@ -91,6 +92,8 @@ func (m *model) renderPreview() {
 	m.hunkStarts, m.hunkLines, m.rowLines = nil, nil, nil
 	var lines []string
 	switch {
+	case m.vtab == vtMap:
+		lines = m.renderMap(w)
 	case m.vtab == vtDoc && !m.docIsDiff:
 		for _, l := range strings.Split(strings.TrimRight(m.docRaw, "\n"), "\n") {
 			l = truncateW(expandTabs(l), w)
@@ -172,10 +175,20 @@ func (m model) tabsLabel() string {
 		}
 		return subtleStyle.Render(name)
 	}
-	return tab("Diff", m.vtab == vtDiff, true) + subtleStyle.Render(" · ") + tab("Documento", m.vtab == vtDoc, m.docRaw != "")
+	return tab("Diff", m.vtab == vtDiff, true) + subtleStyle.Render(" · ") + tab("Documento", m.vtab == vtDoc, m.docRaw != "") +
+		subtleStyle.Render(" · ") + tab("Mapa", m.vtab == vtMap, m.mapData != nil || m.mapGen != nil)
 }
 
 func (m model) visualizerStatus() string {
+	if m.vtab == vtMap {
+		if st := m.mapGen; st != nil && st.running {
+			return "gerando o mapa"
+		}
+		if chs := m.mapChapters(); len(chs) > 0 {
+			return fmt.Sprintf("capítulo %d de %d", m.mapChapter+1, len(chs))
+		}
+		return ""
+	}
 	if len(m.hunkStarts) == 0 {
 		return ""
 	}
@@ -190,6 +203,8 @@ func (m model) visualizerStatus() string {
 func (m model) visualizerHeader(w int) string {
 	var l1, l2 string
 	switch {
+	case m.vtab == vtMap:
+		l1, l2 = m.mapHeader(w)
 	case m.vtab == vtDoc:
 		l1 = boldStyle.Render(m.docTitle)
 		l2 = subtleStyle.Render("aberto pelo modelo · [ volta ao diff")
@@ -220,6 +235,11 @@ func (m model) visualizerHeader(w int) string {
 }
 
 func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
+	if m.vtab == vtMap {
+		if nm, cmd, ok := m.updateMapTabKeys(key); ok {
+			return nm, cmd
+		}
+	}
 	switch key {
 	case "up", "k":
 		m.preview.ScrollUp(1)
@@ -266,11 +286,25 @@ func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 			return m, m.previewSelected()
 		}
 	case "[", "]":
-		if m.vtab == vtDiff && m.docRaw != "" {
-			m.vtab = vtDoc
-		} else {
-			m.vtab = vtDiff
+		// Diff → Documento → Mapa, pulando as abas vazias.
+		tabs := []vTab{vtDiff}
+		if m.docRaw != "" {
+			tabs = append(tabs, vtDoc)
 		}
+		if m.mapData != nil || m.mapGen != nil {
+			tabs = append(tabs, vtMap)
+		}
+		cur := 0
+		for i, t := range tabs {
+			if t == m.vtab {
+				cur = i
+			}
+		}
+		step := 1
+		if key == "[" {
+			step = -1
+		}
+		m.vtab = tabs[(cur+step+len(tabs))%len(tabs)]
 		m.renderPreview()
 		m.preview.GotoTop()
 	case "d":

@@ -241,6 +241,9 @@ func (m model) viewMain() string {
 	if m.mode == modePerms {
 		screen = overlay(screen, m.permsPopup(), m.width)
 	}
+	if m.mode == modeMap {
+		screen = overlay(screen, m.mapPopup(), m.width)
+	}
 	return strings.Join(screen, "\n")
 }
 
@@ -365,6 +368,8 @@ func (m model) helpLine() string {
 		return "→↓ aumentam · ←↑ diminuem · enter ou esc termina"
 	case modePerms:
 		return "↑↓ escolhe · ←→ muda · r ler · e editar · esc fecha"
+	case modeMap:
+		return "enter gera o mapa · ↑↓ troca o modelo · esc cancela"
 	}
 	base := "ctrl+space comandos · alt+setas foco · "
 	switch m.focus {
@@ -373,6 +378,9 @@ func (m model) helpLine() string {
 	case pFiles:
 		return base + "↑↓ arquivo · r revisar · o editor · enter chat"
 	case pDiff:
+		if m.vtab == vtMap {
+			return base + "←→ capítulo · [ ] aba · ctrl+g referências · enter chat"
+		}
 		return base + "n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
 	case pChat:
 		if m.streaming {

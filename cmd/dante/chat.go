@@ -82,6 +82,11 @@ func (m *model) buildSystemPrompt() string {
 			break
 		}
 	}
+	if m.mapData != nil {
+		s += fmt.Sprintf("\n\n<mapa_do_projeto commit=%q>\nResumo do projeto feito antes, para você se orientar. Pode estar "+
+			"desatualizado: confira no código antes de afirmar algo.\n\n%s\n</mapa_do_projeto>",
+			shortSHA(m.mapData.Commit), m.mapData.Compact(compactMapBytes))
+	}
 	return s
 }
 
@@ -271,6 +276,12 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	}
 	if cmds.perms {
 		m.mode, m.permIdx = modePerms, 0
+	}
+	if cmds.mapa || cmds.tour { // o resto da mensagem é ignorado
+		if cmds.mapa {
+			return m.startMapScan()
+		}
+		return m.startTour()
 	}
 	explicit := t != nil || l != nil
 	if !explicit {
