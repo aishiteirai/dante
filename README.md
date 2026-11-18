@@ -87,6 +87,7 @@ O jeito mais simples é cadastrar a chave pelo próprio dante:
 | Provedor | Onde gerar a chave |
 |---|---|
 | Claude (Anthropic) | https://platform.claude.com/settings/keys |
+| Gemini (Google) | https://aistudio.google.com/apikey |
 | DeepSeek | https://platform.deepseek.com/api_keys |
 | Qwen (Alibaba Cloud) | Alibaba Cloud Model Studio → API Key |
 | OpenCode Console / Go | https://opencode.ai/console → Account → Personal API keys |
@@ -95,9 +96,24 @@ As chaves ficam em `~/.config/dante/credenciais.json`, um arquivo separado do `c
 e legível só pelo seu usuário (permissão 600). Na tela de modelos, cada provedor mostra de
 onde vem a chave em uso. `x` remove a chave salva no dante.
 
-Também dá para usar variáveis de ambiente, como antes: `ANTHROPIC_API_KEY`,
+Também dá para usar variáveis de ambiente, como antes: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
 `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY` ou `OPENCODE_API_KEY`. Quando há as duas, a chave salva no dante tem
 prioridade.
+
+### Gemini
+
+O Gemini entra pela API do Google compatível com a da OpenAI. Gere a chave no
+[Google AI Studio](https://aistudio.google.com/apikey) e cadastre-a no dante (tecla `c` sobre
+"Gemini (Google)" na tela de modelos). A lista de modelos vem da própria conta, só com os de
+conversa (sem embeddings, imagem ou áudio), com os "pro" primeiro e os mais novos antes.
+
+- O contexto é de 1 milhão de tokens, então o pacote de revisão vai sempre no tamanho cheio.
+- Os modelos que raciocinam devolvem uma "assinatura do raciocínio" em cada chamada de
+  ferramenta, e o dante a devolve na rodada seguinte, como o Gemini exige.
+- A chave do AI Studio tem uma camada gratuita, com limite de requisições por minuto e por dia.
+  Nela, o Google pode usar o que você envia para melhorar os produtos dele; com o
+  faturamento ativado no projeto, não.
+- No `/mapa`, o modelo barato do Gemini é o `gemini-2.5-flash`.
 
 ### OpenCode
 
