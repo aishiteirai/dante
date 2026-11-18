@@ -55,11 +55,13 @@ type LeftOut struct {
 	Path     string
 	Add, Del int
 	Why      string
+	Funcs    []string // funções alteradas (sem custo: lidas do diff), para o modelo se orientar
 }
 
 type ReviewPack struct {
 	Diff     string // diffs incluídos, na ordem do git
 	Included int
+	Files    []string // arquivos cujo diff está em Diff
 	Left     []LeftOut
 	Callers  []Callers // onde são chamadas as funções alteradas
 }
@@ -155,13 +157,13 @@ func (r Repo) ReviewDiff(sha string, limit int) (ReviewPack, error) {
 		case r.Blocked(f.Path):
 			continue // sensível: o conteúdo não vai ao modelo
 		case chunks[f.Path] == "" && f.Status == "?":
-			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "novo, fora do git: leia com read_file"})
+			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "novo, fora do git: leia com read_file", nil})
 		case chunks[f.Path] == "":
-			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "sem diff de texto"})
+			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "sem diff de texto", nil})
 		case blank[f.Path]:
-			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "só espaços ou indentação"})
+			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "só espaços ou indentação", nil})
 		case k == KindGenerated || (hasCode && k != KindCode):
-			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, kindWords[k]})
+			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, kindWords[k], nil})
 		default:
 			cands = append(cands, f)
 		}
@@ -173,7 +175,7 @@ func (r Repo) ReviewDiff(sha string, limit int) (ReviewPack, error) {
 	for _, f := range cands {
 		c := chunks[f.Path]
 		if size+len(c) > limit {
-			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "não coube aqui"})
+			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "não coube aqui", nil})
 			continue
 		}
 		in[f.Path] = true
@@ -193,7 +195,13 @@ func (r Repo) ReviewDiff(sha string, limit int) (ReviewPack, error) {
 			incl = append(incl, p)
 		}
 	}
+	pack.Files = incl
 	pack.Callers = r.callersOf(sha, incl, chunks)
+	for i := range pack.Left {
+		if c := chunks[pack.Left[i].Path]; c != "" && Kind(pack.Left[i].Path) != KindGenerated {
+			pack.Left[i].Funcs = changedSymbols(c)
+		}
+	}
 	sort.SliceStable(pack.Left, func(i, j int) bool { return pack.Left[i].Path < pack.Left[j].Path })
 	return pack, nil
 }
