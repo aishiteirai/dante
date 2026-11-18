@@ -218,6 +218,7 @@ inclusive enquanto você digita no chat:
 | `1` `2` `3` `4` | vai para o painel e o restaura se estiver minimizado |
 | `0` | volta ao layout padrão |
 | `m` / `o` / `u` / `q` | modelo / outro repositório / atualizar / sair |
+| `p` | permissões do agente (ler ou editar) |
 
 Com o mouse: clique dá foco, a roda rola o painel embaixo dela e arrastar a borda entre dois
 painéis redimensiona. Para selecionar texto com o mouse capturado, segure `Shift` (na maioria
@@ -230,7 +231,7 @@ Teclas de cada painel (fora do chat): `Tab` passa para o próximo painel e `q` s
 | Commits | `↑↓` escolhe · `r` revisa o alvo inteiro · `enter` vai para os arquivos · `esc` troca de repositório |
 | Arquivos | `↑↓` escolhe · `r` revisa o arquivo · `o` abre no `$EDITOR` · `d` volta ao diff · `enter` vai para o chat |
 | Visualizador | `↑↓` `PgUp` `PgDn` `g` `G` rolam · `n`/`N` próximo e anterior trecho · `J`/`K` próximo e anterior arquivo · `[` `]` trocam a aba · `s` lado a lado · `+`/`-` mais ou menos contexto · `o` abre no editor na linha do trecho |
-| Chat | `enter` envia · `alt+enter` quebra linha · `/` comandos de modo (`tab` completa) · `ctrl+g` referências · `ctrl+o` leituras em detalhe · `PgUp`/`PgDn` rolam · `ctrl+n` nova conversa · `esc` cancela a resposta |
+| Chat | `enter` envia · `alt+enter` quebra linha · `/` comandos de modo (`tab` completa) · `ctrl+g` referências · `ctrl+o` leituras em detalhe · `ctrl+z` desfaz as mudanças da última resposta · `PgUp`/`PgDn` rolam · `ctrl+n` nova conversa · `esc` cancela a resposta |
 
 Em terminais com menos de 80 colunas, aparece um painel por vez, com as abas no topo.
 
@@ -266,10 +267,47 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 
 ### O que o modelo pode fazer
 
-Por enquanto, só ler. As ferramentas são `read_file` (inclusive a versão de um commit
-antigo), `git_diff`, `grep`, `list_files`, `git_log` e `git_blame`. Todas ficam presas à
-pasta do repositório, sem shell e sem escrita. Para editar um arquivo, use `o`, que abre o
-arquivo no seu editor.
+O agente tem dois modos, e o atual aparece no título do chat:
+
+| Modo | Chip | O que o modelo pode fazer |
+|---|---|---|
+| `/ler` (padrão) | `◉ ler` | ler o repositório e sugerir; uma mudança proposta aparece como cartão "sugestão", e nada é gravado |
+| `/editar` | `✎ editar · perguntar` | editar, criar e apagar arquivos, conforme as permissões |
+
+O dante sempre abre no modo ler e nunca troca de modo sozinho. Se você pedir uma mudança
+no modo ler ("corrija…", "refatore…"), ele só avisa que o modelo vai sugerir.
+
+**Permissões do modo editar** (`/permissoes` ou `ctrl+space p`; salvas no `config.json`):
+
+| Ação | Padrão | Valores |
+|---|---|---|
+| editar arquivos | perguntar | perguntar, permitir, negar |
+| criar arquivos | perguntar | perguntar, permitir, negar |
+| apagar arquivos | negar | perguntar, permitir, negar |
+
+```json
+"permissoes": { "editar": "perguntar", "criar": "perguntar", "apagar": "negar" }
+```
+
+**Aprovação:** cada mudança chega como um cartão no chat, com o mini-diff, e o diff inteiro
+aparece no Visualizador. Teclas, de qualquer painel:
+
+- `s` aplica; `n` (ou `esc`) recusa, e o modelo é avisado para não insistir;
+- `t` aplica esta e as próximas mudanças da mesma resposta sem perguntar;
+- `e` abre a proposta no seu editor (`$VISUAL`/`$EDITOR`); o que você salvar é aplicado.
+
+**Desfazer:** `ctrl+z` desfaz todas as mudanças da última resposta que mudou arquivos (e
+`ctrl+z` de novo, a anterior). Um arquivo que você editou depois não é sobrescrito: o dante
+avisa e deixa como está.
+
+**Regras fixas,** que nenhuma permissão muda: o agente nunca escreve em arquivos sensíveis
+(os mesmos que ele não lê), na pasta `.git` ou fora do repositório, nem por link simbólico.
+Uma mudança só é aplicada se o arquivo continua como estava quando o modelo a propôs.
+
+As ferramentas de leitura são `read_file` (inclusive a versão de um commit antigo),
+`read_files`, `git_diff`, `grep`, `list_files`, `git_log` e `git_blame`; as de escrita,
+`edit_file`, `write_file` e `delete_file`. Todas ficam presas à pasta do repositório, sem
+shell. Para editar você mesmo, use `o`, que abre o arquivo no seu editor.
 
 ### Segredos não saem da sua máquina
 
@@ -338,7 +376,7 @@ junto com as instruções do modelo. Há um modelo em `exemplos/diretrizes.md`.
 - Addon do noct: o dante continua independente, mas também poderá rodar como mod do noct
   (veja `CLAUDE.md`).
 - Editar arquivos dentro do dante e salvar.
-- Pedir melhorias ao agente: ferramentas de escrita, com confirmação antes de aplicar.
+- `/mapa` e `/tour`: um mapa do projeto, gerado sob demanda por um modelo barato.
 
 ## CLI `revisor` (opcional)
 
