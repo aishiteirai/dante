@@ -230,12 +230,39 @@ Teclas de cada painel (fora do chat): `Tab` passa para o próximo painel e `q` s
 | Commits | `↑↓` escolhe · `r` revisa o alvo inteiro · `enter` vai para os arquivos · `esc` troca de repositório |
 | Arquivos | `↑↓` escolhe · `r` revisa o arquivo · `o` abre no `$EDITOR` · `d` volta ao diff · `enter` vai para o chat |
 | Visualizador | `↑↓` `PgUp` `PgDn` `g` `G` rolam · `n`/`N` próximo e anterior trecho · `J`/`K` próximo e anterior arquivo · `[` `]` trocam a aba · `s` lado a lado · `+`/`-` mais ou menos contexto · `o` abre no editor na linha do trecho |
-| Chat | `enter` envia · `alt+enter` quebra linha · `PgUp`/`PgDn` rolam · `ctrl+n` nova conversa · `esc` cancela a resposta |
+| Chat | `enter` envia · `alt+enter` quebra linha · `/` comandos de modo (`tab` completa) · `ctrl+g` referências · `ctrl+o` leituras em detalhe · `PgUp`/`PgDn` rolam · `ctrl+n` nova conversa · `esc` cancela a resposta |
 
 Em terminais com menos de 80 colunas, aparece um painel por vez, com as abas no topo.
 
 Opções: `dante --repo CAMINHO_OU_URL` abre direto o repositório, e
 `dante --modelo deepseek/deepseek-chat` pula a escolha do modelo.
+
+### Revisar ou explicar
+
+O chat tem dois tipos de tarefa e três formatos de resposta. O modo atual aparece no título
+do chat (`‹revisar · normal›`) e vale até você trocar.
+
+| Comando | O que faz | Também detectado quando você escreve… |
+|---|---|---|
+| `/revisar` | procura problemas (padrão) | "revise", "tem bug?", "está certo?" |
+| `/explicar` | diz o que o código faz e por quê, sem julgar | "explique", "como funciona", "o que faz" |
+| `/aprendiz` | sem jargão, com analogia, passo a passo e glossário | "como se eu fosse um estagiário", "sou iniciante" |
+| `/rapido` | cinco linhas no máximo | "seja pontual", "resumo", "direto ao ponto" |
+| `/normal` | o equilíbrio de sempre | "em detalhes", "aprofunde" |
+
+Os comandos vão no começo da mensagem e podem ser combinados (`/explicar /aprendiz como
+funciona o chat?`). Sozinhos, só trocam o modo. Sem comando, o dante lê o pedido e avisa
+quando muda o modo por conta própria. A detecção nunca mexe em permissões.
+
+**Como as respostas aparecem:**
+- **Revisão:** um RESUMO e um cartão por problema, com a gravidade em cor, o local, a
+  explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Se ele
+  não usar a ferramenta, como acontece com alguns modelos locais, a revisão vem em texto.
+- **Referências:** cada `arquivo:linha` citado ganha um número `[n]`. `ctrl+g` lista as
+  referências, e o número, ou `enter`, mostra o trecho no Visualizador, com a linha marcada
+  por `▶`: no diff, se o arquivo mudou no commit, ou o arquivo inteiro na aba Documento.
+- **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
+  uma por linha.
 
 ### O que o modelo pode fazer
 
