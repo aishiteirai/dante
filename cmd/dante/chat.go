@@ -98,6 +98,7 @@ func (m *model) resetChat() {
 	m.chat = nil
 	m.entries = nil
 	m.diffSent, m.diffPending = "", ""
+	m.refs, m.refIdx = nil, 0
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -353,7 +354,12 @@ func (m *model) onChatEvent(ev llm.Event) {
 		m.thinking = false
 		if ev.Call.Name == findingTool {
 			if f, err := parseFinding(ev.Call.Args); err == nil {
-				m.entries = append(m.entries, entry{kind: eFinding, f: &f})
+				n := 0
+				if p, ok := m.resolveRefPath(f.Arquivo); ok {
+					f.Arquivo = p
+					n = m.addRef(p, f.Linha)
+				}
+				m.entries = append(m.entries, entry{kind: eFinding, f: &f, ref: n})
 			}
 			break
 		}
@@ -636,7 +642,7 @@ func (m *model) refreshChat() {
 				body = lipgloss.NewStyle().Width(w).Render(e.text) // texto cru enquanto chega
 			} else {
 				if e.cacheW != w || e.cacheN != len(e.text) {
-					e.cache, e.cacheW, e.cacheN = markdown(e.text, w), w, len(e.text)
+					e.cache, e.cacheW, e.cacheN = markdown(m.annotateRefs(e.text), w), w, len(e.text)
 				}
 				body = e.cache
 			}

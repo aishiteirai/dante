@@ -97,20 +97,26 @@ type model struct {
 	mode     int
 	drag     *dragState
 
-	preview    viewport.Model
-	previewKey string
-	vtab       vTab   // aba do Visualizador
-	diffPath   string // arquivo do diff mostrado
-	diffRaw    string
-	docTitle   string
-	docRaw     string
-	docIsDiff  bool
-	diffSplit  int // splitAuto, splitOn, splitOff
-	diffCtx    int // linhas de contexto do diff na tela
-	hunkStarts []int
-	hunkLines  []int
-	stats      map[string]repo.CommitStat
-	reviewed   map[string]bool
+	preview     viewport.Model
+	previewKey  string
+	vtab        vTab   // aba do Visualizador
+	diffPath    string // arquivo do diff mostrado
+	diffRaw     string
+	docTitle    string
+	docRaw      string
+	docIsDiff   bool
+	diffSplit   int // splitAuto, splitOn, splitOff
+	diffCtx     int // linhas de contexto do diff na tela
+	hunkStarts  []int
+	hunkLines   []int
+	rowLines    []int // linha do arquivo em cada linha da tela do Visualizador
+	markLine    int   // linha marcada (referência aberta)
+	pendingLine int   // linha a marcar quando o próximo conteúdo chegar
+	refs        []refEntry
+	refIdx      int    // seleção na lista de referências
+	refDigits   string // primeiro dígito de um número de referência com dois dígitos
+	stats       map[string]repo.CommitStat
+	reviewed    map[string]bool
 
 	// chat
 	prov        config.Provider
@@ -318,6 +324,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case repoOpenedMsg:
 		return m.onRepoOpened(msg)
+
+	case refDocMsg:
+		return m.onRefDoc(msg)
 
 	case keyCheckedMsg:
 		return m.onKeyChecked(msg)

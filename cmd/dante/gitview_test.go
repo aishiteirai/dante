@@ -49,7 +49,7 @@ func TestParseDiff(t *testing.T) {
 }
 
 func TestRenderUnifiedEDobras(t *testing.T) {
-	lines, starts := renderUnified(parseDiff(amostraDiff), 90)
+	lines, starts, _ := renderUnified(parseDiff(amostraDiff), 90, 0)
 	plain := make([]string, len(lines))
 	for i, l := range lines {
 		plain[i] = ansi.Strip(l)
@@ -73,7 +73,7 @@ func TestRenderUnifiedEDobras(t *testing.T) {
 }
 
 func TestRenderSplit(t *testing.T) {
-	lines, starts := renderSplit(parseDiff(amostraDiff), 101)
+	lines, starts, _ := renderSplit(parseDiff(amostraDiff), 101, 0)
 	if !strings.Contains(ansi.Strip(lines[0]), "ANTES") || !strings.Contains(ansi.Strip(lines[0]), "DEPOIS") || len(starts) != 2 {
 		t.Fatalf("cabeçalho/trechos: %q %v", ansi.Strip(lines[0]), starts)
 	}

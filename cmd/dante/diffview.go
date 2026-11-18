@@ -258,35 +258,43 @@ func hunkGap(hs []diffHunk, i int) int {
 	return hs[i].oldStart - (prev.oldStart + prev.oldLen)
 }
 
-// renderUnified desenha o diff em sequência; devolve as linhas e onde começa cada trecho.
-func renderUnified(d parsedDiff, w int) ([]string, []int) {
+// renderUnified desenha o diff em sequência. Devolve as linhas, onde começa cada trecho e,
+// para cada linha da tela, o número da linha no arquivo novo (0 se não houver). A linha
+// `mark` do arquivo novo ganha um ▶ na margem (referência aberta pelo chat).
+func renderUnified(d parsedDiff, w, mark int) ([]string, []int, []int) {
 	if d.binary && len(d.hunks) == 0 {
-		return []string{subtleStyle.Render("arquivo binário: sem diff de texto")}, nil
+		return []string{subtleStyle.Render("arquivo binário: sem diff de texto")}, nil, []int{0}
 	}
 	var out []string
-	var starts []int
+	var starts, rowLine []int
+	add := func(s string, line int) { out = append(out, s); rowLine = append(rowLine, line) }
 	gut := lipgloss.NewStyle().Foreground(dGutter)
 	textW := max(w-13, 4) // "1234 1234 ± "
 	for i, h := range d.hunks {
 		if g := hunkGap(d.hunks, i); g > 0 {
-			out = append(out, foldLine(g, w, i == 0))
+			add(foldLine(g, w, i == 0), 0)
 		}
 		starts = append(starts, len(out))
-		out = append(out, band(h, w))
+		add(band(h, w), h.newStart)
 		for _, l := range h.lines {
 			sign, sst := signOf(l.kind)
-			row := gut.Render(fmt.Sprintf("%4s %4s ", num(l.old), num(l.new))) + sst.Render(sign) + sst.UnsetBold().Render(" ")
-			out = append(out, row+styledText(l, textW))
+			nums := gut.Render(fmt.Sprintf("%4s %4s ", num(l.old), num(l.new)))
+			if mark > 0 && l.new == mark {
+				nums = markArrow() + gut.Render(fmt.Sprintf("%3s %4s ", num(l.old), num(l.new)))
+			}
+			add(nums+sst.Render(sign)+sst.UnsetBold().Render(" ")+styledText(l, textW), l.new)
 		}
 	}
-	return out, starts
+	return out, starts, rowLine
 }
+
+func markArrow() string { return lipgloss.NewStyle().Foreground(accent).Bold(true).Render("▶") }
 
 // renderSplit desenha o diff lado a lado: antes à esquerda, depois à direita. Linhas que
 // só existem de um lado deixam o outro preenchido com ╱.
-func renderSplit(d parsedDiff, w int) ([]string, []int) {
+func renderSplit(d parsedDiff, w, mark int) ([]string, []int, []int) {
 	if d.binary && len(d.hunks) == 0 {
-		return []string{subtleStyle.Render("arquivo binário: sem diff de texto")}, nil
+		return []string{subtleStyle.Render("arquivo binário: sem diff de texto")}, nil, []int{0}
 	}
 	half := (w - 1) / 2
 	right := w - 1 - half
@@ -299,23 +307,31 @@ func renderSplit(d parsedDiff, w int) ([]string, []int) {
 		if l == nil {
 			return filler(width)
 		}
-		return gut.Render(fmt.Sprintf("%4s ", num(n))) + styledText(*l, max(width-5, 4))
+		g := gut.Render(fmt.Sprintf("%4s ", num(n)))
+		if mark > 0 && l.new == mark && n == l.new {
+			g = markArrow() + gut.Render(fmt.Sprintf("%3s ", num(n)))
+		}
+		return g + styledText(*l, max(width-5, 4))
 	}
 	head := lipgloss.NewStyle().Foreground(dDelFg).Bold(true).Render(ansi.Truncate(" ANTES", half, "")) +
 		strings.Repeat(" ", max(half-6, 0)) + sep +
 		lipgloss.NewStyle().Foreground(dAddFg).Bold(true).Render(" DEPOIS")
 	out := []string{head}
+	rowLine := []int{0}
 	var starts []int
 	for i, h := range d.hunks {
 		if g := hunkGap(d.hunks, i); g > 0 {
 			out = append(out, foldLine(g, w, i == 0))
+			rowLine = append(rowLine, 0)
 		}
 		starts = append(starts, len(out))
 		out = append(out, band(h, w))
+		rowLine = append(rowLine, h.newStart)
 		ls := h.lines
 		for j := 0; j < len(ls); {
 			if ls[j].kind == dlCtx {
 				out = append(out, side(&ls[j], ls[j].old, half)+sep+side(&ls[j], ls[j].new, right))
+				rowLine = append(rowLine, ls[j].new)
 				j++
 				continue
 			}
@@ -338,10 +354,11 @@ func renderSplit(d parsedDiff, w int) ([]string, []int) {
 					al, nn = adds[k], adds[k].new
 				}
 				out = append(out, side(dl, on, half)+sep+side(al, nn, right))
+				rowLine = append(rowLine, nn)
 			}
 		}
 	}
-	return out, starts
+	return out, starts, rowLine
 }
 
 // ---- cabeçalho do arquivo no Visualizador ----

@@ -13,6 +13,7 @@ const (
 	modePrefix
 	modeMove
 	modeResize
+	modeRefs // lista de referências (ctrl+g)
 )
 
 const resizeStep = 0.03
@@ -199,6 +200,15 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return mm, cmd
 	case modeMove, modeResize:
 		return m.moveOrResize(key)
+	case modeRefs:
+		return m.updateRefKeys(key)
+	}
+
+	if key == "ctrl+g" { // referências do chat, de qualquer painel
+		m.mode = modeRefs
+		m.refIdx = max(len(m.refs)-1, 0)
+		m.refDigits = ""
+		return m, nil
 	}
 
 	if isPrefixKey(key) {

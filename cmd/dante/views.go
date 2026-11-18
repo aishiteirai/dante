@@ -235,6 +235,9 @@ func (m model) viewMain() string {
 	if m.mode == modePrefix {
 		screen = overlay(screen, m.commandsPopup(), m.width)
 	}
+	if m.mode == modeRefs {
+		screen = overlay(screen, m.refsPopup(), m.width)
+	}
 	return strings.Join(screen, "\n")
 }
 
@@ -366,7 +369,7 @@ func (m model) helpLine() string {
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"
 		}
-		return base + "enter envia · alt+enter quebra linha · ctrl+n nova conversa"
+		return base + "enter envia · / comandos · ctrl+g referências · ctrl+n nova conversa"
 	}
 	return base
 }
