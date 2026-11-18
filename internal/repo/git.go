@@ -296,3 +296,25 @@ func (r Repo) ListFiles() ([]string, error) {
 	}
 	return fs, nil
 }
+
+// MergedSubjects devolve os assuntos dos commits que um merge trouxe (vazio se não for
+// merge), do mais novo ao mais antigo, até n.
+func (r Repo) MergedSubjects(sha string, n int) []string {
+	if sha == WorkTree {
+		return nil
+	}
+	if _, err := r.git("rev-parse", "--verify", "-q", sha+"^2"); err != nil {
+		return nil
+	}
+	out, err := r.git("log", "--no-merges", fmt.Sprintf("-%d", n), "--format=%h %s", sha+"^1.."+sha+"^2")
+	if err != nil {
+		return nil
+	}
+	var subs []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if l != "" {
+			subs = append(subs, l)
+		}
+	}
+	return subs
+}

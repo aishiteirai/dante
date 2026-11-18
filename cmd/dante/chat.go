@@ -15,6 +15,8 @@ import (
 	"github.com/aishiteirai/dante/internal/repo"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -55,13 +57,14 @@ arquivos alterados que não vieram (testes, documentação, gerados, só espaço
 onde as funções alteradas são usadas. Por último vem um bloco <modo>
 com a tarefa (revisar ou explicar) e o formato da resposta: siga-o, ele vale para aquela mensagem.
 
-Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então o ideal é responder sem ferramentas ou
-com uma rodada só:
-- Comece pelo <diff>: ele costuma bastar. Não peça git_diff de novo para o que já veio; peça só os de <fora_do_diff>
-  que importarem (ex.: o teste do código alterado).
-- Abra código só quando uma conclusão depender de algo fora do diff (um uso listado em <quem_chama>, um tipo). Peça
-  todos os trechos de uma vez, numa chamada de read_files com start_line/end_line. Arquivo grande lido sem trecho
-  volta como esqueleto, com as linhas de cada declaração. Não releia o que já está na conversa.
+Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira: leia com propósito, em lote, e pare quando
+tiver o que precisa.
+- Comece pelo <diff>. Não peça git_diff de novo para o que já veio; peça só os de <fora_do_diff> que importarem
+  (ex.: o teste do código alterado).
+- Para entender o porquê e o impacto de uma mudança, costuma valer ler o código ao redor: quem chama a função
+  alterada (veja <quem_chama>), o tipo usado, o teste. Peça todos os trechos de uma vez, numa chamada de read_files
+  com start_line/end_line. Arquivo grande lido sem trecho volta como esqueleto, com as linhas de cada declaração.
+  Não releia o que já está na conversa.
 - Não opine sobre código que não viu, no diff ou num arquivo. Use git_log e git_blame quando a intenção original ajudar.
 - Num commit, read_file com ref=<sha> mostra o arquivo como estava naquele commit; sem ref, mostra o que está no disco hoje.
 - Ancore cada observação em arquivo:linha (ex.: internal/llm/openai.go:111). Numa revisão, para bugs e falhas de segurança,
@@ -72,7 +75,16 @@ com uma rodada só:
   proposto) ou editar (você pode alterar arquivos com edit_file, write_file e delete_file, quando o pedido for esse).
   Só o desenvolvedor troca a permissão; nunca peça para ele trocar só para você aplicar uma sugestão de revisão.
 
-Responda em português, em markdown, de forma direta. Em perguntas simples, responda só o que foi perguntado.`
+Como responder (em português, em markdown; o chat é um painel de terminal, então seja enxuto):
+- Comece pela resposta, numa frase: o efeito da mudança na prática, não a lista de arquivos.
+- Explique o porquê e o impacto: como era antes, como fica agora, quem é afetado, o que pode quebrar. Nunca descreva
+  o diff arquivo por arquivo ("adiciona X em a.go, edita b.go"): agrupe por ideia.
+- A mensagem do commit é uma pista da intenção; confira no código.
+- Parágrafos de até 3 linhas; prefira tópicos curtos. Use rótulos em negrito (**Por quê:**) em vez de títulos; títulos
+  (##) só em respostas longas.
+- Cite código como caminho/arquivo.ext:LINHA e funções entre crases. Commits pelo SHA curto (7 caracteres).
+- Sem introdução ("Claro!", "Vou analisar…"), sem repetir a pergunta, sem conclusão genérica nem elogios.
+- Em perguntas simples, responda só o que foi perguntado.`
 
 func (m *model) buildSystemPrompt() string {
 	s := fmt.Sprintf(systemPrompt, repoDisplayName(m.repo.Root))
@@ -165,7 +177,14 @@ func (m model) contextBlock() string {
 		b.WriteString("Alvo: mudanças locais não commitadas (working tree comparado com HEAD; arquivos com status ? ainda não estão no git)\n")
 	} else {
 		msg := m.repo.CommitMessage(m.target)
-		fmt.Fprintf(&b, "Alvo: commit %s\n%s\n", m.target, indent(msg, "  "))
+		fmt.Fprintf(&b, "Alvo: commit %s\n%s\n", shortSHA(m.target), indent(msg, "  "))
+		// Num merge, a intenção está nos commits que ele trouxe.
+		if subs := m.repo.MergedSubjects(m.target, 15); len(subs) > 0 {
+			b.WriteString("Commits trazidos por este merge:\n")
+			for _, l := range subs {
+				b.WriteString("  " + l + "\n")
+			}
+		}
 		if m.target != m.repo.Head() {
 			fmt.Fprintf(&b, "Este commit não é o HEAD: para ver os arquivos como estavam nele, use read_file com ref=%s.\n", shortSHA(m.target))
 		}
@@ -245,13 +264,10 @@ func (m *model) diffBlock(scope string) string {
 		return "" // já enviado nesta conversa (o do alvo inteiro cobre os arquivos)
 	}
 	limit := m.diffLimit()
-	// Explicar rápido não precisa do diff inteiro: os arquivos que ficam de fora vão como
+	// A resposta rápida não precisa do diff inteiro: os arquivos que ficam de fora vão como
 	// lista, com as funções alteradas, e o modelo pede o diff de um deles se precisar.
-	switch {
-	case m.level == levelRapido:
+	if m.level == levelRapido {
 		limit = min(limit, 6000)
-	case m.task == taskExplicar:
-		limit = min(limit, 12000)
 	}
 	if scope != "" {
 		d, err := m.repo.DiffForModel(m.target, scope, repo.DiffContextLines)
@@ -789,7 +805,7 @@ func markdown(text string, width int) string {
 			style = "light"
 		}
 		var err error
-		r, err = glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(width), glamour.WithEmoji())
+		r, err = glamour.NewTermRenderer(glamour.WithStyles(chatStyle(style == "dark")), glamour.WithWordWrap(width), glamour.WithEmoji())
 		if err != nil {
 			return lipgloss.NewStyle().Width(width).Render(text)
 		}
@@ -990,3 +1006,26 @@ func withPacked(p *packedDiffs, target *string, next llm.Executor) llm.Executor 
 		return next(ctx, call)
 	}
 }
+
+// chatStyle é o estilo do markdown no chat: o padrão do glamour, mas sem a margem (o
+// painel já tem a dele), títulos sem "##" e na cor do dante, e código em linha sem fundo,
+// só colorido (caminhos e funções aparecem muito e o fundo pesava).
+func chatStyle(dark bool) ansi.StyleConfig {
+	cfg := styles.LightStyleConfig
+	head, code, sub := "57", "30", "240"
+	if dark {
+		cfg = styles.DarkStyleConfig
+		head, code, sub = "141", "80", "248"
+	}
+	zero := uint(0)
+	cfg.Document.Margin = &zero
+	cfg.Heading.Color = &head
+	cfg.H1 = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: &head, Bold: boolP(true)}}
+	cfg.H2 = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: &head, Bold: boolP(true)}}
+	cfg.H3 = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: &sub, Bold: boolP(true)}}
+	cfg.H4 = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: &sub, Bold: boolP(true)}}
+	cfg.Code = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: &code}}
+	return cfg
+}
+
+func boolP(b bool) *bool { return &b }

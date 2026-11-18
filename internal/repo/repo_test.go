@@ -181,3 +181,20 @@ func TestStatsEMetadados(t *testing.T) {
 		t.Fatalf("parseShortstat = %+v", s)
 	}
 }
+
+func TestMergedSubjects(t *testing.T) {
+	r := setup(t)
+	run(t, r.Root, "git", "checkout", "-q", "-b", "ramo")
+	os.WriteFile(filepath.Join(r.Root, "n.txt"), []byte("1\n"), 0o644)
+	run(t, r.Root, "git", "add", ".")
+	run(t, r.Root, "git", "commit", "-qm", "feat: algo novo")
+	run(t, r.Root, "git", "checkout", "-q", "main")
+	run(t, r.Root, "git", "merge", "-q", "--no-ff", "-m", "Merge do ramo", "ramo")
+	subs := r.MergedSubjects(r.Head(), 10)
+	if len(subs) != 1 || !strings.HasSuffix(subs[0], "feat: algo novo") {
+		t.Fatalf("merge: %v", subs)
+	}
+	if r.MergedSubjects(r.Head()+"^1", 10) != nil {
+		t.Fatal("commit comum não é merge")
+	}
+}
