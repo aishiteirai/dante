@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -373,6 +374,10 @@ func httpError(status int, body []byte, p Provider) error {
 		}
 		return fmt.Errorf("chave de API recusada pelo provedor%s: %s", hint, msg)
 	case 404:
+		// "This model models/X is no longer available… use models/Y" (Gemini).
+		if m := retiredModel.FindStringSubmatch(msg); m != nil {
+			return fmt.Errorf("o provedor descontinuou o modelo %s; ele sugere o %s (m troca o modelo)", m[1], m[2])
+		}
 		if strings.Contains(strings.ToLower(msg), "data policy") || strings.Contains(strings.ToLower(msg), "privacy") {
 			return fmt.Errorf("o OpenRouter bloqueou este modelo pela sua política de dados; os modelos grátis "+
 				"exigem liberar o uso dos dados em https://openrouter.ai/settings/privacy (%s)", msg)
@@ -383,6 +388,8 @@ func httpError(status int, body []byte, p Provider) error {
 	}
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
+
+var retiredModel = regexp.MustCompile(`models/([\w.\-]+) is no longer available.*?use models/([\w.\-]+)`)
 
 func invalidKeyMsg(msg string) bool {
 	return strings.Contains(msg, "API key not valid") || strings.Contains(msg, "API_KEY_INVALID")
