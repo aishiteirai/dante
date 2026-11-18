@@ -278,3 +278,21 @@ func (r Repo) CommitMessage(sha string) string {
 	out, _ := r.git("log", "-1", "--format=%an <%ae>, %ad%n%n%B", sha)
 	return strings.TrimSpace(out)
 }
+
+// ListFiles devolve os arquivos do repositório (versionados e novos, sem os ignorados),
+// relativos à raiz.
+func (r Repo) ListFiles() ([]string, error) {
+	out, err := r.git("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	var fs []string
+	seen := map[string]bool{}
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" && !seen[f] {
+			seen[f] = true
+			fs = append(fs, f)
+		}
+	}
+	return fs, nil
+}
