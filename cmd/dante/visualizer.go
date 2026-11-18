@@ -193,6 +193,9 @@ func (m model) visualizerHeader(w int) string {
 	case m.vtab == vtDoc:
 		l1 = boldStyle.Render(m.docTitle)
 		l2 = subtleStyle.Render("aberto pelo modelo · [ volta ao diff")
+		if strings.Contains(m.docTitle, "· referência [") {
+			l2 = subtleStyle.Render("referência do chat · ctrl+g abre outra · [ volta ao diff")
+		}
 	case len(m.files) > 0 && m.fileIdx < len(m.files):
 		f := m.files[m.fileIdx]
 		name := f.Path

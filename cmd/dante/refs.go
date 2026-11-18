@@ -143,6 +143,13 @@ func (m model) openRef(n int) (tea.Model, tea.Cmd) {
 	title := fmt.Sprintf("%s:%d · referência [%d]", r.path, r.line, n)
 	return m, func() tea.Msg {
 		out, isErr := exec(context.Background(), llm.ToolCall{Name: "read_file", Args: string(b)})
+		if isErr && args["ref"] != nil {
+			// O arquivo não existe naquele commit: mostra a versão atual, avisando.
+			cur, _ := json.Marshal(map[string]any{"path": r.path})
+			if out2, bad := exec(context.Background(), llm.ToolCall{Name: "read_file", Args: string(cur)}); !bad {
+				return refDocMsg{key: key, title: title + " · versão atual (não existe neste commit)", content: out2, line: r.line}
+			}
+		}
 		if isErr {
 			return refDocMsg{key: key, err: fmt.Errorf("%s", out)}
 		}
