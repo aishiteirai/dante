@@ -49,4 +49,9 @@ Implicações para o desenho do dante:
 ### Próximos passos já combinados
 
 - Editar arquivos dentro do dante e salvar.
-- Pedir melhorias ao agente (ferramentas de escrita, com confirmação antes de aplicar).
+- `/mapa` sob demanda (modelo barato, salvo por repositório) e `/tour`, numa aba Mapa do
+  Visualizador.
+
+Feito: agente ler/editar (`cmd/dante/agent.go`, `internal/repo/write.go`). As ferramentas
+de escrita vão em toda conversa, porque a lista não pode mudar no meio dela (o Claude trata
+isso como edição do histórico); no modo ler, elas recusam.

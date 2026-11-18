@@ -121,6 +121,9 @@ func (r Repo) Executor(target func() string) llm.Executor {
 			if r.Blocked(clean) && call.Name != "list_files" && call.Name != "git_log" {
 				return blockedErr(clean).Error(), true
 			}
+			if isGitDir(clean) { // pode guardar tokens (URLs de remotes, credenciais)
+				return "a pasta .git não é lida; use git_log, git_diff e git_blame", true
+			}
 		}
 		var out string
 		var err error
@@ -241,6 +244,9 @@ func (r Repo) readOne(f fileArg) (string, error) {
 	}
 	if r.Blocked(clean) {
 		return "", blockedErr(clean)
+	}
+	if isGitDir(clean) {
+		return "", fmt.Errorf("a pasta .git não é lida")
 	}
 	return r.readFile(toolArgs{Path: clean, Ref: f.Ref, StartLine: f.StartLine, EndLine: f.EndLine})
 }

@@ -133,3 +133,15 @@ func TestOpenCode(t *testing.T) {
 		t.Fatal("chave compartilhada não funcionou")
 	}
 }
+
+func TestPermissoes(t *testing.T) {
+	var c Config
+	if c.Permission("editar") != PermAsk || c.Permission("apagar") != PermDeny || c.Permission("xyz") != PermDeny {
+		t.Fatal("padrões")
+	}
+	c.SetPermission("apagar", PermAllow)
+	c.Permissoes["editar"] = "talvez"
+	if c.Permission("apagar") != PermAllow || c.Permission("editar") != PermAsk {
+		t.Fatal("valor salvo ou inválido")
+	}
+}
