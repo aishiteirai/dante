@@ -355,13 +355,18 @@ rodada só**:
 
 1. **O pacote de revisão vai na sua mensagem.** Na primeira pergunta sobre um commit, o diff
    do código vai junto, com 3 linhas de contexto (o cabeçalho de cada trecho diz a função).
-   Testes, documentação e arquivos gerados vão só como lista, e o modelo pede o diff deles se
-   precisar. Se o código não couber (60 KB ou 1/4 do contexto do modelo), entram primeiro os
-   arquivos com mais mudanças, e o resto vai para a lista.
+   Testes, documentação, arquivos gerados e os que mudaram só em espaços vão só como lista,
+   e o modelo pede o diff deles se precisar. Em Python e YAML, onde a indentação muda o
+   comportamento, espaços continuam contando como mudança. Se o código não couber (60 KB ou
+   1/4 do contexto do modelo), entram primeiro os arquivos com mais mudanças, e o resto vai
+   para a lista. O pacote também diz **onde as funções alteradas são usadas** (só
+   `arquivo:linha`, achado com `git grep`, sem gastar tokens), para o modelo ir direto ao
+   trecho certo em vez de gastar uma rodada procurando.
 2. **Leituras recortadas.** As instruções pedem para abrir código só quando uma conclusão
    depender de algo fora do diff, com todos os trechos numa chamada de `read_files`. Um
    arquivo com mais de 250 linhas, lido sem trecho, volta como **esqueleto**: as declarações
-   com o número da linha, para o modelo pedir só o que interessa.
+   com o número da linha, para o modelo pedir só o que interessa. O `grep` devolve no máximo
+   40 resultados.
 3. **Limite de rodadas de leitura por pergunta:** 2 ao revisar, 3 ao explicar, 1 no modo
    rápido (sem limite no modo editar). Passado o limite, o modelo é avisado para concluir com
    o que já leu.
