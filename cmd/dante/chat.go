@@ -50,14 +50,15 @@ const systemPrompt = `Você é o dante, um assistente de código sênior que tra
 arquivos alterados e conversa com você. Cada mensagem dele começa com um bloco <contexto> que diz o alvo (um commit ou as
 mudanças locais ainda não commitadas) e o arquivo em foco. Na primeira pergunta sobre um alvo, vem também um bloco <diff>
 com as mudanças do código (3 linhas de contexto; o cabeçalho de cada trecho diz a função) e, em <fora_do_diff>, os
-arquivos alterados que não vieram (testes, documentação, gerados ou os que não couberam). Por último vem um bloco <modo>
+arquivos alterados que não vieram (testes, documentação, gerados, só espaços ou os que não couberam), e em <quem_chama>
+onde as funções alteradas são usadas. Por último vem um bloco <modo>
 com a tarefa (revisar ou explicar) e o formato da resposta: siga-o, ele vale para aquela mensagem.
 
 Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então o ideal é responder sem ferramentas ou
 com uma rodada só:
 - Comece pelo <diff>: ele costuma bastar. Não peça git_diff de novo para o que já veio; peça só os de <fora_do_diff>
   que importarem (ex.: o teste do código alterado).
-- Abra código só quando uma conclusão depender de algo fora do diff (quem chama a função alterada, um tipo). Peça
+- Abra código só quando uma conclusão depender de algo fora do diff (um uso listado em <quem_chama>, um tipo). Peça
   todos os trechos de uma vez, numa chamada de read_files com start_line/end_line. Arquivo grande lido sem trecho
   volta como esqueleto, com as linhas de cada declaração. Não releia o que já está na conversa.
 - Não opine sobre código que não viu, no diff ou num arquivo. Use git_log e git_blame quando a intenção original ajudar.
@@ -270,6 +271,17 @@ func (m *model) diffBlock(scope string) string {
 			fmt.Fprintf(&b, "- %s (+%d −%d, %s)\n", l.Path, l.Add, l.Del, l.Why)
 		}
 		b.WriteString("</fora_do_diff>\n")
+	}
+	if len(p.Callers) > 0 {
+		b.WriteString("<quem_chama>\nOnde as funções alteradas são usadas (só a posição; leia o trecho se a revisão depender dele):\n")
+		for _, c := range p.Callers {
+			fmt.Fprintf(&b, "- %s (%s): %s", c.Name, c.File, strings.Join(c.Sites, ", "))
+			if c.More > 0 {
+				fmt.Fprintf(&b, " … e mais %d", c.More)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("</quem_chama>\n")
 	}
 	m.diffPending = key
 	return b.String() + "\n"
