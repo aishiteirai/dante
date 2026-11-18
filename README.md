@@ -211,7 +211,9 @@ dante
 2. **Modelo.** Escolha quem vai revisar. A escolha fica salva para a próxima vez.
 3. **Área de trabalho.** São três painéis, como numa IDE: o Navegador à esquerda e, à
    direita, o Visualizador largo em cima e o chat embaixo.
-   - **[1] Navegador:** o histórico com o grafo, duas linhas por commit (assunto; autor,
+   - **[1] Navegador:** no topo, quando a branch atual tem commits que a principal não tem,
+     a linha **◆ branch × main**: a branch inteira como um PR (os commits dela desde que saiu
+     da principal), para revisar tudo de uma vez. Depois, o histórico com o grafo, duas linhas por commit (assunto; autor,
      data e tamanho da mudança) e "✓ revisado" nos que você já conversou. As mudanças não
      commitadas aparecem no topo. Os arquivos do commit selecionado aparecem logo abaixo
      dele, em árvore por pasta (`~` modificado, `+` novo, `−` removido, `→` renomeado).
@@ -283,10 +285,18 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
   curtos: **Antes → depois**, **Por quê**, **Como funciona** (o caminho principal, com
   `arquivo:linha`) e **Impacto**. O modelo agrupa por ideia, não arquivo por arquivo. Num
   merge, ele recebe também as mensagens dos commits que o merge trouxe, onde está a intenção.
-- **Revisão:** um RESUMO com o que a mudança faz e o veredito, e um cartão por problema, com a gravidade em cor, o local, a
+- **Revisão:** a primeira linha diz o que a mudança faz e o veredito; depois vem o
+  **Impacto** (quem é afetado, o que pode quebrar, se há testes). O dante escolhe, pelo que o
+  diff toca, as listas de verificação que valem (injeção, HTTP e permissões, concorrência,
+  arquivos, segredos, banco de dados, desempenho, além de erros, código limpo e testes). Em
+  seguida, um cartão por problema, com a gravidade em cor, o local, a
   explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Alguns
   modelos pequenos escrevem a chamada como texto (`registrar_achado(arquivo="…", …)`) em vez
   de usar a ferramenta: o dante reconhece e transforma em cartões do mesmo jeito.
+- **Pedir a correção ao Claude:** `/corrigir` copia um pedido pronto com todos os achados
+  (arquivo, linha, problema e sugestão) para colar no Claude Code ou em outro agente. Na lista
+  de referências (`ctrl+g`), `c` copia só o achado selecionado. O pedido também fica em
+  `~/.local/share/dante/pedidos/ultimo.md`.
 - **Referências:** cada `arquivo:linha` citado ganha um número `[n]`. `ctrl+g` lista as
   referências, e o número, ou `enter`, mostra o trecho no Visualizador, com a linha marcada
   por `▶`: no diff, se o arquivo mudou no commit, ou o arquivo inteiro na aba Documento.
