@@ -92,6 +92,10 @@ O jeito mais simples é cadastrar a chave pelo próprio dante:
 | Qwen (Alibaba Cloud) | Alibaba Cloud Model Studio → API Key |
 | OpenCode Console / Go | https://opencode.ai/console → Account → Personal API keys |
 
+Na tela de modelos, os provedores prontos para usar vêm primeiro, e só o do cursor fica aberto
+com os modelos (`↑↓` passa de um provedor para outro). Os que ainda não têm chave ficam no fim,
+uma linha cada. `/` busca um modelo pelo nome em todos os provedores.
+
 As chaves ficam em `~/.config/dante/credenciais.json`, um arquivo separado do `config.json`
 e legível só pelo seu usuário (permissão 600). Na tela de modelos, cada provedor mostra de
 onde vem a chave em uso. `x` remove a chave salva no dante.
