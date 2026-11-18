@@ -34,40 +34,59 @@ var chatCommands = []chatCommand{
 	{"/aprendiz", "sem jargão, com analogias e por onde começar"},
 	{"/rapido", "cinco linhas no máximo"},
 	{"/normal", "o equilíbrio de sempre"},
+	{"/ler", "o modelo só lê e sugere (padrão)"},
+	{"/editar", "o modelo pode alterar arquivos, com a sua aprovação"},
+	{"/permissoes", "o que o modelo pode fazer no modo editar"},
 }
 
 func modeLabel(t taskMode, l levelMode) string { return taskNames[t] + " · " + levelNames[l] }
 
+// cmdSet são as mudanças pedidas por comandos no começo da mensagem.
+type cmdSet struct {
+	task  *taskMode
+	level *levelMode
+	agent *agentMode
+	perms bool // abrir o painel de permissões
+}
+
 // parseCommands lê os comandos no começo da mensagem ("/explicar /aprendiz como funciona
 // o chat?") e devolve as mudanças de modo e o resto do texto.
-func parseCommands(text string) (t *taskMode, l *levelMode, rest, unknown string) {
+func parseCommands(text string) (c cmdSet, rest, unknown string) {
 	words := strings.Fields(text)
 	i := 0
 	for ; i < len(words) && strings.HasPrefix(words[i], "/"); i++ {
 		switch fold(words[i]) {
 		case "/revisar", "/revisao":
 			v := taskRevisar
-			t = &v
+			c.task = &v
 		case "/explicar", "/explica":
 			v := taskExplicar
-			t = &v
+			c.task = &v
 		case "/aprendiz", "/leigo", "/estagiario":
 			v := levelAprendiz
-			l = &v
+			c.level = &v
 		case "/rapido", "/pontual":
 			v := levelRapido
-			l = &v
+			c.level = &v
 		case "/normal":
 			v := levelNormal
-			l = &v
+			c.level = &v
+		case "/ler":
+			v := agentLer
+			c.agent = &v
+		case "/editar":
+			v := agentEditar
+			c.agent = &v
+		case "/permissoes", "/permissao":
+			c.perms = true
 		default:
-			return nil, nil, text, words[i]
+			return cmdSet{}, text, words[i]
 		}
 	}
 	if i == 0 {
-		return nil, nil, strings.TrimSpace(text), ""
+		return c, strings.TrimSpace(text), ""
 	}
-	return t, l, strings.Join(words[i:], " "), ""
+	return c, strings.Join(words[i:], " "), ""
 }
 
 // fold deixa minúsculo e sem acentos, para comparar comandos e palavras-chave.
@@ -102,6 +121,12 @@ func hasAny(s string, kws []string) bool {
 	return false
 }
 
+var kwEditar = []string{"corrija", "corrige", "conserte", "arrume", "aplique", "aplica ", "altere", "edite", "refatore",
+	"implemente", "adicione", "remova", "renomeie", "mude o", "mude a", "troque", "faca a mudanca", "faz a mudanca"}
+
+// asksForEdit: o pedido parece pedir uma mudança nos arquivos.
+func asksForEdit(text string) bool { return hasAny(" "+fold(text)+" ", kwEditar) }
+
 // detectMode procura no pedido sinais de tarefa e de formato. nil = sem sinal.
 func detectMode(text string) (t *taskMode, l *levelMode) {
 	s := " " + fold(text) + " "
@@ -128,9 +153,10 @@ func detectMode(text string) (t *taskMode, l *levelMode) {
 }
 
 // modeBlock é a instrução do modo que vai em cada mensagem ao modelo.
-func modeBlock(t taskMode, l levelMode) string {
+func modeBlock(t taskMode, l levelMode, agent string) string {
 	var b strings.Builder
 	b.WriteString("<modo>" + modeLabel(t, l) + "\n")
+	b.WriteString(agent)
 	switch t {
 	case taskRevisar:
 		b.WriteString(reviewInstructions)

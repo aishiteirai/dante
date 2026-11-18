@@ -13,7 +13,8 @@ const (
 	modePrefix
 	modeMove
 	modeResize
-	modeRefs // lista de referências (ctrl+g)
+	modeRefs  // lista de referências (ctrl+g)
+	modePerms // permissões do agente (/permissoes ou ctrl+space p)
 )
 
 const resizeStep = 0.03
@@ -128,6 +129,8 @@ func (m model) command(k string) (tea.Model, tea.Cmd, bool) {
 		return nm, cmd, true
 	case "u":
 		return m, tea.Batch(loadLog(m.repo), m.reloadFilesIfWorktree()), true
+	case "p":
+		m.mode, m.permIdx = modePerms, 0
 	case "q":
 		return m, tea.Quit, true
 	default:
@@ -182,6 +185,13 @@ func (m model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 
+	// Uma mudança esperando aprovação captura s/n/t/e/esc, de qualquer painel.
+	if m.approval != nil && m.mode == modeNormal {
+		if nm, cmd, ok := m.updateApprovalKeys(key); ok {
+			return nm, cmd
+		}
+	}
+
 	switch m.mode {
 	case modePrefix:
 		if key == "esc" || isPrefixKey(key) {
@@ -202,6 +212,12 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.moveOrResize(key)
 	case modeRefs:
 		return m.updateRefKeys(key)
+	case modePerms:
+		return m.updatePermKeys(key)
+	}
+
+	if key == "ctrl+z" { // desfaz as mudanças da última resposta
+		return m.undoLast()
 	}
 
 	if key == "ctrl+o" { // detalhes das leituras do modelo no chat

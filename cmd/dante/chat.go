@@ -27,15 +27,17 @@ const (
 	eError
 	eUsage   // gasto de tokens de uma resposta
 	eFinding // achado de revisão, desenhado como cartão
+	eChange  // mudança de arquivo proposta ou feita pelo agente
 )
 
 type entry struct {
 	kind   entryKind
 	text   string
-	f      *finding // eFinding
-	ref    int      // número da referência do achado
-	ok     bool     // ferramenta: terminou sem erro
-	done   bool     // ferramenta: terminou
+	f      *finding    // eFinding
+	ref    int         // número da referência do achado
+	chg    *changeCard // eChange
+	ok     bool        // ferramenta: terminou sem erro
+	done   bool        // ferramenta: terminou
 	cache  string
 	cacheW int
 	cacheN int
@@ -62,7 +64,9 @@ Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então le
   descreva uma entrada ou situação concreta que leva ao erro; se não conseguir, diga que é uma suspeita.
 - Prioridade numa revisão: bugs, depois segurança, depois qualidade e simplificação, depois os padrões do time. Não
   comente estilo que um formatador resolveria.
-- Por enquanto você só lê: não consegue alterar arquivos. Ao sugerir correções, mostre o trecho de código proposto.
+- O bloco <modo> diz também a sua permissão: ler (você não altera arquivos; ao sugerir correções, mostre o trecho
+  proposto) ou editar (você pode alterar arquivos com edit_file, write_file e delete_file, quando o pedido for esse).
+  Só o desenvolvedor troca a permissão; nunca peça para ele trocar só para você aplicar uma sugestão de revisão.
 
 Responda em português, em markdown, de forma direta. Em perguntas simples, responda só o que foi perguntado.`
 
@@ -99,6 +103,7 @@ func (m *model) resetChat() {
 	m.entries = nil
 	m.diffSent, m.diffPending = "", ""
 	m.refs, m.refIdx = nil, 0
+	m.approval = nil
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -120,8 +125,10 @@ func (m *model) ensureChat() error {
 	c, err := llm.New(m.prov.LLM(), llm.Options{
 		Model:  m.modelName,
 		System: m.buildSystemPrompt(),
-		Tools:  append(repo.Tools(), findingToolDef()),
-		Exec:   withFindings(m.repo.Executor(func() string { return *sendTo })),
+		// As ferramentas de escrita vão em toda conversa (a lista não pode mudar no meio dela);
+		// no modo ler, elas recusam.
+		Tools:  append(append(repo.Tools(), findingToolDef()), repo.WriteTools()...),
+		Exec:   m.writes().wrap(m.repo, withFindings(m.repo.Executor(func() string { return *sendTo }))),
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
 		ContextTokens: m.effectiveContext(),
@@ -247,10 +254,23 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// Comandos de modo no começo da mensagem; sem eles, a detecção pelo pedido.
-	t, l, rest, unknown := parseCommands(text)
+	cmds, rest, unknown := parseCommands(text)
 	if unknown != "" {
 		m.setErr("comando desconhecido: " + unknown + " · digite / para ver os comandos")
 		return m, nil
+	}
+	t, l := cmds.task, cmds.level
+	if cmds.agent != nil && *cmds.agent != m.agent {
+		m.setAgent(*cmds.agent)
+		note := "permissão: ler · o modelo não altera arquivos"
+		if m.agent == agentEditar {
+			note = fmt.Sprintf("permissão: editar · editar arquivos: %s, criar: %s, apagar: %s · /permissoes muda",
+				m.cfg.Permission("editar"), m.cfg.Permission("criar"), m.cfg.Permission("apagar"))
+		}
+		m.entries = append(m.entries, entry{kind: eNotice, text: note})
+	}
+	if cmds.perms {
+		m.mode, m.permIdx = modePerms, 0
 	}
 	explicit := t != nil || l != nil
 	if !explicit {
@@ -270,6 +290,10 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		}
 		m.entries = append(m.entries, entry{kind: eNotice, text: note})
 	}
+	if m.agent == agentLer && rest != "" && asksForEdit(rest) {
+		m.entries = append(m.entries, entry{kind: eNotice,
+			text: "você está no modo ler: o modelo só pode sugerir mudanças · /editar deixa ele aplicar, com a sua aprovação"})
+	}
 	if rest == "" { // só trocou o modo
 		m.refreshChat()
 		m.chatView.GotoBottom()
@@ -282,7 +306,7 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	}
 	*m.sendTo = m.target
 	m.diffPending = ""
-	prompt := m.contextBlock() + m.diffBlock(scope) + modeBlock(m.task, m.level) + text
+	prompt := m.contextBlock() + m.diffBlock(scope) + modeBlock(m.task, m.level, m.agentBlock()) + text
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""
@@ -291,6 +315,7 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	m.cancel = cancel
 	ch := make(chan tea.Msg, 256)
 	m.events = ch
+	m.writes().startTurn(ch)
 	chat := m.chat
 	go func() {
 		u, err := chat.Send(ctx, prompt, func(ev llm.Event) { ch <- chatEventMsg{ev} })
@@ -352,6 +377,9 @@ func (m *model) onChatEvent(ev llm.Event) {
 		m.thinking = true
 	case llm.EvToolCall:
 		m.thinking = false
+		if _, w := writeTools[ev.Call.Name]; w {
+			break // o cartão da mudança vem do executor
+		}
 		if ev.Call.Name == findingTool {
 			if f, err := parseFinding(ev.Call.Args); err == nil {
 				n := 0
@@ -365,7 +393,7 @@ func (m *model) onChatEvent(ev llm.Event) {
 		}
 		m.entries = append(m.entries, entry{kind: eTool, text: describeCall(ev.Call)})
 	case llm.EvToolResult:
-		if ev.Call.Name == findingTool {
+		if _, w := writeTools[ev.Call.Name]; w || ev.Call.Name == findingTool {
 			break // o cartão já foi desenhado; um erro volta ao modelo, que corrige
 		}
 		for i := len(m.entries) - 1; i >= 0; i-- {
@@ -516,6 +544,21 @@ func describeCall(c llm.ToolCall) string {
 func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 	m.streaming, m.thinking = false, false
 	m.cancel = nil
+	if m.approval != nil { // cancelada com uma proposta esperando
+		m.approval = nil
+		for i := range m.entries {
+			if m.entries[i].kind == eChange && m.entries[i].chg.state == chPending {
+				c := *m.entries[i].chg
+				c.state, c.note = chDeclined, "resposta encerrada antes da aprovação"
+				m.entries[i].chg = &c
+			}
+		}
+	}
+	if g := m.writes().endTurn(); len(g.changes) > 0 {
+		m.undo = append(m.undo, g)
+		m.entries = append(m.entries, entry{kind: eNotice,
+			text: plural(len(g.changes), "mudança aplicada", "mudanças aplicadas") + " nesta resposta · ctrl+z desfaz"})
+	}
 	m.usage.InputTokens += msg.usage.InputTokens
 	m.usage.OutputTokens += msg.usage.OutputTokens
 	// Ferramentas que ficaram sem resultado (cancelamento).
@@ -575,6 +618,8 @@ func (m model) saveTranscript() {
 			fmt.Fprintf(&b, "> %s\n\n", e.text)
 		case eFinding:
 			b.WriteString(findingMarkdown(*e.f, e.ref) + "\n")
+		case eChange:
+			b.WriteString(changeMarkdown(*e.chg) + "\n")
 		default:
 			fmt.Fprintf(&b, "> **%s**\n\n", e.text)
 		}
@@ -712,9 +757,11 @@ func (m *model) refreshChat() {
 			parts = append(parts, "  "+subtleStyle.Render(truncateW("↳ "+e.text, w-2)))
 		case eFinding:
 			parts = append(parts, "", renderFinding(*e.f, e.ref, w))
+		case eChange:
+			parts = append(parts, "", renderChange(*e.chg, w))
 		}
 	}
-	if m.streaming && (last < 0 || m.entries[last].kind != eAssistant || m.thinking) {
+	if m.streaming && m.approval == nil && (last < 0 || m.entries[last].kind != eAssistant || m.thinking) {
 		label := " pensando…"
 		if last >= 0 && m.entries[last].kind == eTool && !m.entries[last].done {
 			label = ""

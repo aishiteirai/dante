@@ -8,18 +8,24 @@ import (
 )
 
 func TestParseCommands(t *testing.T) {
-	tk, lv, rest, unk := parseCommands("/explicar /aprendiz como funciona o chat?")
-	if tk == nil || *tk != taskExplicar || lv == nil || *lv != levelAprendiz || rest != "como funciona o chat?" || unk != "" {
-		t.Fatalf("got %v %v %q %q", tk, lv, rest, unk)
+	c, rest, unk := parseCommands("/explicar /aprendiz como funciona o chat?")
+	if c.task == nil || *c.task != taskExplicar || c.level == nil || *c.level != levelAprendiz || rest != "como funciona o chat?" || unk != "" {
+		t.Fatalf("got %+v %q %q", c, rest, unk)
 	}
-	if tk, lv, rest, _ = parseCommands("/rápido"); tk != nil || lv == nil || *lv != levelRapido || rest != "" {
-		t.Fatalf("/rápido sozinho: %v %v %q", tk, lv, rest)
+	if c, rest, _ = parseCommands("/rápido"); c.task != nil || c.level == nil || *c.level != levelRapido || rest != "" {
+		t.Fatalf("/rápido sozinho: %+v %q", c, rest)
 	}
-	if _, _, _, unk = parseCommands("/foo tudo bem"); unk != "/foo" {
+	if _, _, unk = parseCommands("/foo tudo bem"); unk != "/foo" {
 		t.Fatalf("desconhecido = %q", unk)
 	}
-	if tk, lv, rest, _ = parseCommands("sem comando /explicar no meio"); tk != nil || lv != nil || rest != "sem comando /explicar no meio" {
+	if c, rest, _ = parseCommands("sem comando /explicar no meio"); c.task != nil || c.level != nil || rest != "sem comando /explicar no meio" {
 		t.Fatal("comando no meio do texto não conta")
+	}
+	if c, rest, _ = parseCommands("/editar corrija o bug"); c.agent == nil || *c.agent != agentEditar || rest != "corrija o bug" {
+		t.Fatalf("/editar: %+v %q", c, rest)
+	}
+	if c, _, _ = parseCommands("/permissões"); !c.perms {
+		t.Fatal("/permissões")
 	}
 }
 
@@ -93,7 +99,7 @@ func TestModoNaMensagem(t *testing.T) {
 		t.Fatal("deveria avisar do comando desconhecido")
 	}
 	// O bloco <modo> descreve a tarefa e o formato.
-	b := modeBlock(taskExplicar, levelAprendiz)
+	b := modeBlock(taskExplicar, levelAprendiz, "")
 	if !strings.Contains(b, "Tarefa: explicar") || !strings.Contains(b, "Palavras novas") {
 		t.Fatalf("modeBlock = %s", b)
 	}

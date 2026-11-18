@@ -152,7 +152,7 @@ func (m model) frame(p paneID, r rect, content string) []string {
 	if p == pDiff {
 		head += "  " + m.tabsLabel()
 	} else if p == pChat && m.modelName != "" {
-		head += "  " + modeChip(m.task, m.level)
+		head += "  " + modeChip(m.task, m.level) + " " + m.agentChip()
 		if extra != "" {
 			head += " " + subtleStyle.Render(extra)
 		}
@@ -238,6 +238,9 @@ func (m model) viewMain() string {
 	if m.mode == modeRefs {
 		screen = overlay(screen, m.refsPopup(), m.width)
 	}
+	if m.mode == modePerms {
+		screen = overlay(screen, m.permsPopup(), m.width)
+	}
 	return strings.Join(screen, "\n")
 }
 
@@ -271,6 +274,7 @@ var commandHelp = [][2]string{
 	{"m", "trocar o modelo"},
 	{"o", "abrir outro repositório"},
 	{"u", "atualizar commits e arquivos"},
+	{"p", "permissões do agente (ler ou editar)"},
 	{"q", "sair do dante"},
 }
 
@@ -351,11 +355,16 @@ func (m model) footer() string {
 }
 
 func (m model) helpLine() string {
+	if m.approval != nil && m.mode == modeNormal {
+		return "mudança proposta: s aplica · n recusa · t aplica todas desta resposta · e ajusta no editor"
+	}
 	switch m.mode {
 	case modeMove:
 		return "setas/hjkl movem o painel · enter ou esc termina"
 	case modeResize:
 		return "→↓ aumentam · ←↑ diminuem · enter ou esc termina"
+	case modePerms:
+		return "↑↓ escolhe · ←→ muda · r ler · e editar · esc fecha"
 	}
 	base := "ctrl+space comandos · alt+setas foco · "
 	switch m.focus {
@@ -369,7 +378,7 @@ func (m model) helpLine() string {
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"
 		}
-		return base + "enter envia · / comandos · ctrl+g referências · ctrl+o leituras · ctrl+n nova conversa"
+		return base + "enter envia · / comandos · ctrl+g referências · ctrl+o leituras · ctrl+z desfaz · ctrl+n nova conversa"
 	}
 	return base
 }

@@ -137,6 +137,11 @@ type model struct {
 	usage       llm.Usage
 	convStart   time.Time
 	thinking    bool
+	agent       agentMode        // ler ou editar (sempre começa em ler)
+	bus         *writeBus        // modo, permissões e aprovações das ferramentas de escrita
+	approval    *pendingApproval // mudança esperando s/n/t/e
+	undo        []undoGroup      // mudanças de cada resposta, para ctrl+z
+	permIdx     int              // seleção no painel de permissões
 
 	// opções da linha de comando
 	flagModel string
@@ -389,6 +394,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chatDoneMsg:
 		return m.onChatDone(msg)
+
+	case changeMsg:
+		return m.onChange(msg)
+
+	case approvalEditedMsg:
+		return m.onApprovalEdited(msg)
 
 	case editorDoneMsg:
 		if msg.err != nil {
