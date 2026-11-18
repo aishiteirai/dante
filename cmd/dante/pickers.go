@@ -174,16 +174,26 @@ func (m model) viewRepo() string {
 }
 
 // ---- tela 3: escolher o modelo ----
+//
+// Os provedores prontos para usar (com chave, ou o servidor local rodando) vêm primeiro,
+// uma linha cada, e só o provedor do cursor fica aberto com os modelos (sanfona). Os sem
+// chave ficam numa seção no fim, uma linha cada: enter ou c pede a chave. / busca um modelo
+// em todos os provedores.
 
 type modelRow struct {
 	header   bool
+	label    string // título de seção (não selecionável)
 	prov     config.Provider
 	model    string
 	note     string
 	ok       bool
+	ready    bool   // cabeçalho: provedor pronto para usar
+	count    int    // cabeçalho: quantos modelos
 	download bool   // sugestão ainda não baixada no servidor local
 	size     string // tamanho do download
 }
+
+func (r modelRow) selectable() bool { return r.label == "" }
 
 func (m *model) enterModelScreen() []tea.Cmd {
 	var cmds []tea.Cmd
@@ -197,6 +207,11 @@ func (m *model) enterModelScreen() []tea.Cmd {
 	if m.modelName != "" {
 		m.modelWant = &config.Choice{Provedor: m.prov.ID, Modelo: m.modelName}
 	}
+	m.modelFilter, m.modelFiltering = "", false
+	m.modelExp = ""
+	if m.modelWant != nil {
+		m.modelExp = m.modelWant.Provedor
+	}
 	m.modelIdx = -1
 	m.buildModelRows()
 	if m.modelIdx < 0 {
@@ -205,88 +220,140 @@ func (m *model) enterModelScreen() []tea.Cmd {
 	return cmds
 }
 
+// providerHeader monta a linha do provedor: a situação da chave ou do servidor e quantos
+// modelos ele tem.
+func (m *model) providerHeader(p config.Provider) (h modelRow, models []string, downloads []modelRow) {
+	models = append([]string{}, p.Modelos...)
+	h = modelRow{header: true, prov: p}
+	list, listed := m.listed[p.ID]
+	_, failed := m.listErr[p.ID]
+	if p.Listar && listed {
+		models = visibleModels(models, list)
+	}
+	switch {
+	case p.Local && listed:
+		for _, sg := range p.Sugeridos {
+			if !hasModel(list, sg.Modelo) {
+				downloads = append(downloads, modelRow{prov: p, model: sg.Modelo, download: true, size: sg.Tamanho, note: sg.Nota})
+			}
+		}
+		h.note, h.ok, h.ready = "rodando · "+plural(len(list), "modelo baixado", "modelos baixados"), true, true
+		if len(list) == 0 {
+			h.note = "rodando · escolha um modelo para baixar"
+		}
+	case p.Local && failed:
+		h.note = "não está rodando em " + p.URL
+		if len(p.Sugeridos) > 0 {
+			h.note = "não está rodando · instale em ollama.com e abra o Ollama"
+		}
+	case p.Local:
+		h.note, h.ready = "procurando…", true
+	default:
+		switch p.KeySource() {
+		case "dante":
+			h.note, h.ok = "chave salva", true
+		case "env":
+			h.note, h.ok = "chave de "+p.ChaveEnv, true
+		case "config":
+			h.note, h.ok = "chave no config.json", true
+		case "ant":
+			h.note, h.ok = "login do ant", true
+		}
+		h.ready = h.ok
+		if h.ok && p.Listar {
+			switch {
+			case listed && p.Filtro == "gratis":
+				h.note = fmt.Sprintf("%d grátis · %s", len(list), h.note)
+			case failed:
+				h.note = "não consegui listar os modelos · " + h.note
+			case !listed:
+				h.note = "procurando modelos… · " + h.note
+			}
+		}
+	}
+	h.count = len(models)
+	return h, models, downloads
+}
+
 func (m *model) buildModelRows() {
 	var sel modelRow
 	if m.modelIdx >= 0 && m.modelIdx < len(m.modelRows) {
 		sel = m.modelRows[m.modelIdx]
 	}
+	var ready, waiting []modelRow
 	var rows []modelRow
+	filter := fold(strings.TrimSpace(m.modelFilter))
 	for _, p := range m.cfg.Provedores {
-		models := append([]string{}, p.Modelos...)
-		h := modelRow{header: true, prov: p}
-		list, listed := m.listed[p.ID]
-		_, failed := m.listErr[p.ID]
-		if p.Listar && listed {
-			models = visibleModels(models, list)
-		}
-		var downloads []modelRow
-		switch {
-		case p.Local && listed:
-			for _, sg := range p.Sugeridos {
-				if !hasModel(list, sg.Modelo) {
-					downloads = append(downloads, modelRow{prov: p, model: sg.Modelo, download: true, size: sg.Tamanho, note: sg.Nota})
+		h, models, downloads := m.providerHeader(p)
+		if filter != "" { // busca: lista plana, de todos os provedores
+			for _, md := range models {
+				if strings.Contains(fold(md), filter) || strings.Contains(fold(p.Nome), filter) {
+					rows = append(rows, modelRow{prov: p, model: md, ready: h.ready})
 				}
 			}
-			h.note, h.ok = fmt.Sprintf("rodando · %s", plural(len(list), "modelo baixado", "modelos baixados")), true
-			if len(list) == 0 {
-				h.note = "rodando · escolha um modelo abaixo para baixar"
-			}
-		case p.Local && failed:
-			h.note = "não está rodando em " + p.URL
-			if len(p.Sugeridos) > 0 {
-				h.note = "não está rodando · instale em ollama.com e abra o Ollama"
-			}
-		case p.Local:
-			h.note = "procurando…"
-		default:
-			switch p.KeySource() {
-			case "dante":
-				h.note, h.ok = "chave salva no dante", true
-			case "env":
-				h.note, h.ok = "chave de "+p.ChaveEnv, true
-			case "config":
-				h.note, h.ok = "chave no config.json", true
-			case "ant":
-				h.note, h.ok = "login do ant", true
-			default:
-				h.note = "sem chave · c para adicionar"
-			}
-			if p.Listar {
-				switch {
-				case listed && p.Filtro == "gratis":
-					h.note = fmt.Sprintf("%d grátis · %s", len(list), h.note)
-				case listed:
-					h.note = fmt.Sprintf("%s · %s", plural(len(list), "modelo", "modelos"), h.note)
-				case failed && !p.Local && !p.HasKey():
-					// Sem chave, provedores como o Gemini nem listam: basta o "sem chave".
-				case failed:
-					h.note = "não consegui listar os modelos · " + h.note
-				case !listed:
-					h.note = "procurando modelos… · " + h.note
-				}
-			}
-		}
-		rows = append(rows, h)
-		for _, md := range models {
-			rows = append(rows, modelRow{prov: p, model: md})
-		}
-		rows = append(rows, downloads...)
-	}
-	m.modelRows = rows
-	for i, r := range rows {
-		if r.header {
 			continue
 		}
-		if w := m.modelWant; w != nil && r.prov.ID == w.Provedor && r.model == w.Modelo {
-			m.modelIdx = i
-			break
+		if !h.ready {
+			waiting = append(waiting, h)
+			continue
 		}
-		// Mantém a seleção quando a lista de um servidor local chega.
-		if m.modelWant == nil && r.prov.ID == sel.prov.ID && r.model == sel.model {
+		if m.modelExp == "" {
+			m.modelExp = p.ID // o primeiro pronto começa aberto
+		}
+		ready = append(ready, h)
+		if p.ID == m.modelExp {
+			for _, md := range models {
+				ready = append(ready, modelRow{prov: p, model: md, ready: true})
+			}
+			ready = append(ready, downloads...)
+		}
+	}
+	if filter == "" {
+		if len(ready) > 0 {
+			rows = append(rows, modelRow{label: "PRONTOS PARA USAR"})
+			rows = append(rows, ready...)
+		}
+		if len(waiting) > 0 {
+			rows = append(rows, modelRow{label: "AINDA NÃO CONFIGURADOS · enter ou c cadastra a chave"})
+			rows = append(rows, waiting...)
+		}
+	}
+	m.modelRows = rows
+	m.modelIdx = -1
+	want := m.modelWant
+	for i, r := range rows {
+		switch {
+		case !r.selectable():
+		case want != nil && !r.header && r.prov.ID == want.Provedor && r.model == want.Modelo:
+			m.modelIdx = i
+		case want == nil && m.modelIdx < 0 && r.prov.ID == sel.prov.ID && r.model == sel.model && r.header == sel.header:
+			m.modelIdx = i // mantém a seleção quando uma lista chega
+		}
+	}
+	if m.modelIdx < 0 {
+		m.modelIdx = m.nextModel(-1, 1)
+	}
+	m.modelOff = scrollTo(max(m.modelIdx, 0), m.modelOff, m.modelListHeight())
+}
+
+// expandAtCursor abre o provedor do cursor (e fecha o anterior), mantendo o cursor nele.
+func (m *model) expandAtCursor() {
+	if m.modelIdx < 0 || m.modelIdx >= len(m.modelRows) || m.modelFilter != "" {
+		return
+	}
+	r := m.modelRows[m.modelIdx]
+	if !r.header || !r.ready || r.prov.ID == m.modelExp {
+		return
+	}
+	m.modelExp = r.prov.ID
+	m.modelWant = nil
+	m.buildModelRows()
+	for i, x := range m.modelRows {
+		if x.header && x.prov.ID == r.prov.ID {
 			m.modelIdx = i
 		}
 	}
-	m.modelOff = scrollTo(max(m.modelIdx, 0), m.modelOff, m.modelListHeight())
+	m.modelOff = scrollTo(m.modelIdx, m.modelOff, m.modelListHeight())
 }
 
 // O Ollama chama "qwen3" de "qwen3:latest".
@@ -313,7 +380,7 @@ func mergeUnique(a, b []string) []string {
 
 func (m model) nextModel(from, dir int) int {
 	for i := from + dir; i >= 0 && i < len(m.modelRows); i += dir {
-		if !m.modelRows[i].header {
+		if m.modelRows[i].selectable() {
 			return i
 		}
 	}
@@ -325,17 +392,69 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	switch k.String() {
+	key := k.String()
+	// Busca: as letras vão para o filtro; setas e enter continuam valendo.
+	if m.modelFiltering {
+		switch key {
+		case "esc":
+			m.modelFilter, m.modelFiltering = "", false
+			m.buildModelRows()
+			return m, nil
+		case "backspace":
+			if r := []rune(m.modelFilter); len(r) > 0 {
+				m.modelFilter = string(r[:len(r)-1])
+			}
+			m.modelWant = nil
+			m.buildModelRows()
+			return m, nil
+		case "up", "down", "enter":
+		default:
+			if k.Type == tea.KeyRunes || key == " " {
+				m.modelFilter += string(k.Runes)
+				if key == " " {
+					m.modelFilter += " "
+				}
+				m.modelWant = nil
+				m.buildModelRows()
+			}
+			return m, nil
+		}
+	}
+	cur := modelRow{}
+	if m.modelIdx >= 0 && m.modelIdx < len(m.modelRows) {
+		cur = m.modelRows[m.modelIdx]
+	}
+	switch key {
 	case "up", "k":
 		m.modelWant = nil
 		if i := m.nextModel(m.modelIdx, -1); i >= 0 {
 			m.modelIdx = i
 		}
+		m.expandAtCursor()
 	case "down", "j":
 		m.modelWant = nil
 		if i := m.nextModel(m.modelIdx, 1); i >= 0 {
 			m.modelIdx = i
 		}
+		m.expandAtCursor()
+	case "right", "l":
+		if cur.header && cur.ready {
+			if i := m.nextModel(m.modelIdx, 1); i >= 0 && !m.modelRows[i].header {
+				m.modelIdx = i
+			}
+		}
+	case "left", "h":
+		if !cur.header {
+			for i := m.modelIdx; i >= 0; i-- {
+				if m.modelRows[i].header {
+					m.modelIdx = i
+					break
+				}
+			}
+		}
+	case "/":
+		m.modelFiltering = true
+		return m, nil
 	case "e":
 		m.cfg.Esforco = cycle(efforts, m.cfg.Esforco)
 		_ = m.cfg.Save()
@@ -349,32 +468,45 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m, tea.Quit
 	case "c":
-		if m.modelIdx >= 0 && m.modelIdx < len(m.modelRows) {
-			return m.openKeyScreen(m.modelRows[m.modelIdx].prov, nil)
+		if cur.prov.ID != "" {
+			return m.openKeyScreen(cur.prov, nil)
 		}
 	case "x":
-		if m.modelIdx >= 0 && m.modelIdx < len(m.modelRows) {
-			return m.removeKey(m.modelRows[m.modelIdx].prov)
+		if cur.prov.ID != "" {
+			return m.removeKey(cur.prov)
 		}
 	case "enter":
-		if m.modelIdx < 0 || m.modelIdx >= len(m.modelRows) {
+		if cur.prov.ID == "" {
 			return m, nil
 		}
-		r := m.modelRows[m.modelIdx]
-		if r.download {
-			return m.startPull(r)
+		if cur.header {
+			if !cur.ready && !cur.prov.Local { // sem chave: pede a chave e já usa o primeiro modelo
+				var then *modelRow
+				if len(cur.prov.Modelos) > 0 {
+					then = &modelRow{prov: cur.prov, model: cur.prov.Modelos[0]}
+				}
+				return m.openKeyScreen(cur.prov, then)
+			}
+			if i := m.nextModel(m.modelIdx, 1); i >= 0 && !m.modelRows[i].header {
+				m.modelIdx = i
+			}
+			break
 		}
-		if !r.prov.HasKey() { // pede a chave antes de usar o modelo
-			return m.openKeyScreen(r.prov, &r)
+		if cur.download {
+			return m.startPull(cur)
 		}
-		if r.prov.ID != m.prov.ID || r.model != m.modelName || m.chat == nil {
-			m.selectModel(r.prov, r.model)
+		if !cur.prov.HasKey() { // pede a chave antes de usar o modelo
+			return m.openKeyScreen(cur.prov, &cur)
 		}
+		if cur.prov.ID != m.prov.ID || cur.model != m.modelName || m.chat == nil {
+			m.selectModel(cur.prov, cur.model)
+		}
+		m.modelFilter, m.modelFiltering = "", false
 		m.screen = scrMain
 		m.resize()
 		return m, nil
 	}
-	m.modelOff = scrollTo(m.modelIdx, m.modelOff, m.modelListHeight())
+	m.modelOff = scrollTo(max(m.modelIdx, 0), m.modelOff, m.modelListHeight())
 	return m, nil
 }
 
@@ -385,26 +517,64 @@ func (m model) viewModel() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("dante") + subtleStyle.Render(" · "+repoDisplayName(m.repo.Root)) + "\n\n")
 	b.WriteString(boldStyle.Render("Qual modelo vai revisar o código?") + "\n")
-	b.WriteString(subtleStyle.Render("Esforço do Claude: ") + boldStyle.Render(m.cfg.Esforco) + subtleStyle.Render("  (e muda)") + "\n\n")
+	if m.modelName != "" {
+		b.WriteString(subtleStyle.Render("Em uso: ") + m.prov.Nome + subtleStyle.Render(" · ") + boldStyle.Render(m.modelName) + "\n")
+	}
+	switch {
+	case m.modelFiltering:
+		b.WriteString(selectedStyle.Render("/ ") + m.modelFilter + selectedStyle.Render("▏") +
+			subtleStyle.Render(fmt.Sprintf("  %s · esc limpa", plural(len(m.modelRows), "modelo", "modelos"))) + "\n")
+	default:
+		b.WriteString(subtleStyle.Render("/ busca um modelo em todos os provedores") + "\n")
+	}
+	b.WriteString("\n")
 	h := m.modelListHeight()
 	end := min(m.modelOff+h, len(m.modelRows))
+	if len(m.modelRows) == 0 {
+		b.WriteString(subtleStyle.Render("nenhum modelo encontrado") + "\n")
+	}
 	for i := m.modelOff; i < end; i++ {
 		r := m.modelRows[i]
-		if r.header {
-			note := subtleStyle.Render(r.note)
-			if r.ok {
-				note = okStyle.Render("✓ " + r.note)
-			} else if !strings.HasPrefix(r.note, "procurando") {
-				note = warnStyle.Render(r.note)
-			}
+		sel := i == m.modelIdx
+		switch {
+		case r.label != "":
 			if i > m.modelOff {
 				b.WriteString("\n")
 			}
-			b.WriteString(truncateW(labelStyle.Render(r.prov.Nome)+subtleStyle.Render(" · ")+note, w) + "\n")
-			continue
-		}
-		name := r.model
-		if r.download {
+			b.WriteString(subtleStyle.Render(r.label) + "\n")
+		case r.header:
+			name := r.prov.Nome
+			note := subtleStyle.Render(r.note)
+			switch {
+			case r.ok:
+				note = okStyle.Render("✓ " + r.note)
+			case r.note != "" && !strings.HasPrefix(r.note, "procurando"):
+				note = warnStyle.Render(r.note)
+			}
+			arrow := "  "
+			if r.ready {
+				arrow = "▸ "
+				if r.prov.ID == m.modelExp {
+					arrow = "▾ "
+				}
+			}
+			if !r.ready && r.note == "" {
+				note = ""
+				if r.count > 0 {
+					note = subtleStyle.Render(plural(r.count, "modelo", "modelos"))
+				}
+			}
+			line := arrow + name
+			if sel {
+				line = selectedStyle.Render(line)
+			} else if r.ready {
+				line = labelStyle.Render(line)
+			}
+			if note != "" {
+				line += subtleStyle.Render(" · ") + note
+			}
+			b.WriteString(truncateW(line, w) + "\n")
+		case r.download:
 			extra := "baixar · " + r.size
 			if r.note != "" {
 				extra += " · " + r.note
@@ -412,19 +582,33 @@ func (m model) viewModel() string {
 			if m.pulling == r.model {
 				extra = m.spin.View() + " " + m.pullStatus
 			}
-			name = padTo(r.model, 20) + " " + subtleStyle.Render(extra)
-			if i == m.modelIdx {
-				b.WriteString(truncateW(selectedStyle.Render("  ↓ ")+selectedStyle.Render(padTo(r.model, 20))+" "+subtleStyle.Render(extra), w) + "\n")
-			} else {
-				b.WriteString(truncateW("  ↓ "+name, w) + "\n")
+			name := "    ↓ " + padTo(r.model, 20)
+			if sel {
+				name = selectedStyle.Render(name)
 			}
-			continue
+			b.WriteString(truncateW(name+" "+subtleStyle.Render(extra), w) + "\n")
+		default:
+			name := r.model
+			if m.modelFilter != "" { // na busca, diz de qual provedor é
+				name += subtleStyle.Render(" · " + r.prov.Nome)
+				if !r.ready {
+					name += warnStyle.Render(" · sem chave")
+				}
+			}
+			cur := r.prov.ID == m.prov.ID && r.model == m.modelName
+			mark := "    "
+			if cur {
+				mark = "  " + okStyle.Render("●") + " "
+			}
+			if sel {
+				b.WriteString(truncateW(mark+selectedStyle.Render("▸ "+r.model)+strings.TrimPrefix(name, r.model), w) + "\n")
+			} else {
+				b.WriteString(truncateW(mark+"  "+name, w) + "\n")
+			}
 		}
-		if i == m.modelIdx {
-			b.WriteString(truncateW(selectedStyle.Render("  ▸ "+name), w) + "\n")
-		} else {
-			b.WriteString(truncateW("    "+name, w) + "\n")
-		}
+	}
+	if end < len(m.modelRows) {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  … mais %d abaixo", len(m.modelRows)-end)) + "\n")
 	}
 	if m.status != "" {
 		st := okStyle
@@ -433,7 +617,14 @@ func (m model) viewModel() string {
 		}
 		b.WriteString("\n" + st.Render(truncateW(m.status, w)) + "\n")
 	}
-	b.WriteString("\n" + subtleStyle.Render(truncateW("Provedores e modelos: "+prettyPath(config.Path()), w)) + "\n")
-	b.WriteString(helpStyle.Render("enter usar/baixar · c chave · x remover chave · e esforço · esc voltar"))
-	return m.center(boxStyle.Width(w + 6).Render(b.String()))
+	help := "enter usa · ↑↓ anda · / busca · c chave · x remove a chave"
+	for _, p := range m.cfg.Provedores {
+		if p.Tipo == "anthropic" && p.HasKey() {
+			help += " · e esforço do Claude: " + m.cfg.Esforco
+			break
+		}
+	}
+	b.WriteString("\n" + helpStyle.Render(truncateW(help+" · esc volta", w)) + "\n")
+	b.WriteString(subtleStyle.Render(truncateW("provedores em "+prettyPath(config.Path()), w)))
+	return m.center(boxStyle.Render(b.String()))
 }
