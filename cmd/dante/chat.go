@@ -687,6 +687,8 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case msg.err == nil:
 		m.status = ""
+	// Achados que o modelo escreveu como texto em vez de usar a ferramenta viram cartões.
+	m.recoverTextFindings()
 		if m.diffPending != "" {
 			m.diffSent = m.diffPending
 		}

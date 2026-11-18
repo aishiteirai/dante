@@ -284,8 +284,9 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
   `arquivo:linha`) e **Impacto**. O modelo agrupa por ideia, não arquivo por arquivo. Num
   merge, ele recebe também as mensagens dos commits que o merge trouxe, onde está a intenção.
 - **Revisão:** um RESUMO com o que a mudança faz e o veredito, e um cartão por problema, com a gravidade em cor, o local, a
-  explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Se ele
-  não usar a ferramenta, como acontece com alguns modelos locais, a revisão vem em texto.
+  explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Alguns
+  modelos pequenos escrevem a chamada como texto (`registrar_achado(arquivo="…", …)`) em vez
+  de usar a ferramenta: o dante reconhece e transforma em cartões do mesmo jeito.
 - **Referências:** cada `arquivo:linha` citado ganha um número `[n]`. `ctrl+g` lista as
   referências, e o número, ou `enter`, mostra o trecho no Visualizador, com a linha marcada
   por `▶`: no diff, se o arquivo mudou no commit, ou o arquivo inteiro na aba Documento.
