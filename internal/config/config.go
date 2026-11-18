@@ -162,7 +162,7 @@ func Defaults() Config {
 			{ID: "gemini", Nome: "Gemini (Google)", Tipo: llm.KindOpenAI,
 				URL: "https://generativelanguage.googleapis.com/v1beta/openai", ChaveEnv: "GEMINI_API_KEY",
 				SiteChave: "https://aistudio.google.com/apikey", Listar: true, Filtro: "gemini", Contexto: 1000000,
-				Modelos: []string{"gemini-2.5-pro", "gemini-2.5-flash"}, ModeloMapa: "gemini-2.5-flash"},
+				Modelos: []string{"gemini-3.1-pro-preview", "gemini-2.5-flash"}, ModeloMapa: "gemini-2.5-flash"},
 			{ID: "openrouter", Nome: "OpenRouter · modelos grátis", Tipo: llm.KindOpenAI,
 				URL: "https://openrouter.ai/api/v1", ChaveEnv: "OPENROUTER_API_KEY",
 				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis", Contexto: 32000},
@@ -217,6 +217,10 @@ func (c *Config) mergeDefaults() (changed bool) {
 			}
 			if p.Contexto == 0 && d.Contexto > 0 {
 				p.Contexto, changed = d.Contexto, true
+			}
+			// O Google descontinuou o gemini-2.5-pro para contas novas: troca a lista antiga.
+			if p.ID == "gemini" && len(p.Modelos) > 0 && p.Modelos[0] == "gemini-2.5-pro" {
+				p.Modelos, changed = d.Modelos, true
 			}
 			if p.ModeloMapa == "" && d.ModeloMapa != "" {
 				p.ModeloMapa, changed = d.ModeloMapa, true

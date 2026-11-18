@@ -88,3 +88,11 @@ func TestGemini(t *testing.T) {
 		t.Fatalf("erro = %v", err)
 	}
 }
+
+func TestModeloDescontinuado(t *testing.T) {
+	body := []byte(`[{"error":{"code":404,"message":"This model models/gemini-2.5-pro is no longer available to new users. Please update your code to use models/gemini-3.1-pro-preview for the latest features and improvements.","status":"NOT_FOUND"}}]`)
+	err := httpError(404, body, Provider{})
+	if !strings.Contains(err.Error(), "descontinuou o modelo gemini-2.5-pro") || !strings.Contains(err.Error(), "gemini-3.1-pro-preview") {
+		t.Fatalf("erro = %v", err)
+	}
+}

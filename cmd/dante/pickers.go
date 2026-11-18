@@ -217,7 +217,7 @@ func (m *model) buildModelRows() {
 		list, listed := m.listed[p.ID]
 		_, failed := m.listErr[p.ID]
 		if p.Listar && listed {
-			models = mergeUnique(models, list)
+			models = visibleModels(models, list)
 		}
 		var downloads []modelRow
 		switch {

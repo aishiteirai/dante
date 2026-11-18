@@ -64,7 +64,7 @@ func (m model) mapChoices() []mapChoice {
 	}
 	for _, p := range m.cfg.Provedores {
 		if !p.Local && p.ModeloMapa != "" && p.KeySource() != "" {
-			add(p, p.ModeloMapa, noteFor(p, p.ModeloMapa))
+			add(p, m.cheapModel(p), p.Nome+" · barato")
 		}
 	}
 	if m.modelName != "" {
@@ -454,4 +454,22 @@ func (m model) mapPopup() string {
 	b.WriteString("\n" + okStyle.Bold(true).Render("enter") + " gerar   " + subtleStyle.Render("esc") + " cancelar   " +
 		subtleStyle.Render("↑↓") + " trocar o modelo")
 	return boxStyle.Padding(1, 2).Render(b.String())
+}
+
+// cheapModel é o modelo barato do provedor para o mapa. Se a conta já listou os modelos e o
+// padrão não está entre eles (o provedor o descontinuou), vale o primeiro "flash" da lista
+// ou, sem nenhum, o primeiro "-mini".
+func (m model) cheapModel(p config.Provider) string {
+	list := m.listed[p.ID]
+	if len(list) == 0 || hasModel(list, p.ModeloMapa) {
+		return p.ModeloMapa
+	}
+	for _, kind := range []string{"flash", "-mini"} { // "-mini": "gemini" também contém "mini"
+		for _, x := range list {
+			if strings.Contains(strings.ToLower(x), kind) {
+				return x
+			}
+		}
+	}
+	return p.ModeloMapa
 }
