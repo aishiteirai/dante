@@ -153,8 +153,8 @@ func TestArvoreDeArquivos(t *testing.T) {
 			t.Errorf("linha %d = %q, queria conter %q", i, got[i], want[i])
 		}
 	}
-	if !strings.Contains(got[4], "+ novo") || !strings.Contains(got[2], "→ renom.") {
-		t.Errorf("situação por extenso: %q", got)
+	if !strings.HasPrefix(got[4], "  + guard.go") || !strings.HasPrefix(got[2], "  → velho.go") {
+		t.Errorf("símbolo da situação: %q", got)
 	}
 }
 
@@ -181,5 +181,49 @@ func TestAbasDoVisualizadorERevisados(t *testing.T) {
 	saveReviewed(root, set)
 	if !loadReviewed(root)["abc"] {
 		t.Fatal("revisados não persistiram")
+	}
+}
+
+func TestNavegador(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.screen = scrMain
+	m.width, m.height = 140, 30
+	m.relayout()
+	m.rows = []logRow{
+		{c: repo.Commit{Graph: "* ", SHA: "aaa", Short: "aaa", Subject: "primeiro"}},
+		{c: repo.Commit{Graph: "* ", SHA: "bbb", Short: "bbb", Subject: "segundo"}},
+	}
+	m.target, m.filesFor = "aaa", "aaa"
+	m.files = []repo.FileChange{{Path: "a.go", Status: "M"}, {Path: "b.go", Status: "A"}}
+	key := func(k string) {
+		t.Helper()
+		nm, _ := m.updateLogKeys(k)
+		m = nm.(model)
+	}
+	view := func() string { return ansi.Strip(m.viewLog(60, 20)) }
+	if !strings.Contains(view(), "~ a.go") {
+		t.Fatalf("os arquivos do commit deveriam aparecer abertos:\n%s", view())
+	}
+	key("down") // entra nos arquivos
+	if !m.navFile || m.fileIdx != 0 {
+		t.Fatal("↓ deveria entrar no primeiro arquivo")
+	}
+	key("down")
+	if m.fileIdx != 1 {
+		t.Fatal("↓ deveria ir ao segundo arquivo")
+	}
+	key("left") // volta ao commit
+	key("left") // fecha
+	if m.navFile || m.navOpen || strings.Contains(view(), "a.go") {
+		t.Fatalf("← deveria fechar os arquivos:\n%s", view())
+	}
+	key("down") // fechado: passa direto para o próximo commit
+	if m.logIdx != 1 || m.target != "bbb" {
+		t.Fatalf("↓ deveria ir ao segundo commit (logIdx=%d)", m.logIdx)
+	}
+	key("right")
+	if !m.navOpen {
+		t.Fatal("→ deveria abrir os arquivos")
 	}
 }

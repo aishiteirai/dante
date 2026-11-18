@@ -16,14 +16,13 @@ import (
 type paneID int
 
 const (
-	pLog paneID = iota
-	pFiles
-	pDiff
+	pLog  paneID = iota // Navegador: commits e, abertos embaixo de cada um, os arquivos
+	pDiff               // Visualizador: diff, documento e mapa
 	pChat
 	paneCount
 )
 
-var paneNames = [paneCount]string{"Commits", "Arquivos", "Diff", "Chat"}
+var paneNames = [paneCount]string{"Navegador", "Visualizador", "Chat"}
 
 type column struct {
 	Panes   []paneID  `json:"paineis"`
@@ -43,10 +42,11 @@ type rect struct{ x, y, w, h int }
 func (r rect) contains(x, y int) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 
 func defaultLayout() layout {
+	// Como numa IDE: o Navegador à esquerda; à direita, o Visualizador largo em cima e o
+	// chat embaixo, com a largura toda.
 	return layout{Cols: []column{
-		{Panes: []paneID{pLog, pFiles}, Sizes: []float64{0.55, 0.45}, Width: 0.26},
-		{Panes: []paneID{pDiff}, Sizes: []float64{1}, Width: 0.38},
-		{Panes: []paneID{pChat}, Sizes: []float64{1}, Width: 0.36},
+		{Panes: []paneID{pLog}, Sizes: []float64{1}, Width: 0.30},
+		{Panes: []paneID{pDiff, pChat}, Sizes: []float64{0.58, 0.42}, Width: 0.70},
 	}}
 }
 
@@ -444,7 +444,9 @@ func neighbor(rects map[paneID]rect, from paneID, dx, dy int) (paneID, bool) {
 		default:
 			continue
 		}
-		if score := gap*1000 + off; score < bestScore {
+		// Empate (dois painéis encostados): vale o de cima, ou o da esquerda.
+		score := gap*1000 + off
+		if score < bestScore || (score == bestScore && r.y+r.x < rects[best].y+rects[best].x) {
 			best, bestScore = p, score
 		}
 	}

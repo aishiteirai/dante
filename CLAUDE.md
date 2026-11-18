@@ -15,7 +15,8 @@ com ferramentas de leitura e opina sobre as mudanças.
 ## Mapa
 
 - `cmd/dante/` interface (Bubble Tea v1): telas (confiança, repositório, modelo, chave),
-  área de trabalho com painéis, chat.
+  área de trabalho com três painéis (Navegador com commits e arquivos em árvore;
+  Visualizador em cima do chat, à direita), chat.
 - `internal/llm/` provedores: Anthropic (SDK oficial) e compatível com OpenAI; laço de
   ferramentas; validação de chave; download de modelos do Ollama.
 - `internal/repo/` git (log com grafo, arquivos, diffs) e ferramentas de leitura do modelo,

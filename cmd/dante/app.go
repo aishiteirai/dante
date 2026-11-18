@@ -91,6 +91,8 @@ type model struct {
 	filesFor string
 	fileIdx  int
 	fileOff  int
+	navOpen  bool // Navegador: arquivos do commit selecionado abertos embaixo dele
+	navFile  bool // Navegador: cursor num arquivo (senão, no commit)
 	focus    paneID
 	lay      layout
 	rects    map[paneID]rect
@@ -194,6 +196,7 @@ func newModel(cfg config.Config, repoFlag, modelFlag string) model {
 		flagModel: modelFlag,
 		lay:       loadLayout(),
 		diffCtx:   defaultDiffCtx,
+		navOpen:   true,
 	}
 	switch {
 	case repoFlag != "":
@@ -467,6 +470,7 @@ func (m model) onRepoOpened(msg repoOpenedMsg) (tea.Model, tea.Cmd) {
 	m.repo = repo.Repo{Root: msg.root, Bloquear: m.cfg.ArquivosBloqueados, Liberar: m.cfg.ArquivosLiberados}
 	m.rows, m.files, m.filesFor = nil, nil, ""
 	m.logIdx, m.logOff, m.fileIdx, m.fileOff = 0, 0, 0, 0
+	m.navFile = false
 	m.stats, m.reviewed = nil, loadReviewed(msg.root)
 	m.mapData, _ = mapa.Load(mapPath(msg.root))
 	m.mapGen, m.mapCacheKey, m.mapChapter = nil, "", 0
@@ -579,44 +583,15 @@ func (m *model) previewSelected() tea.Cmd {
 
 // ---- área de trabalho: teclas dos painéis ----
 
-func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
+// moveCommit leva o cursor do Navegador ao commit anterior (-1) ou ao próximo (1).
+func (m model) moveCommit(dir, steps int) (tea.Model, tea.Cmd) {
 	moved := false
-	switch key {
-	case "esc":
-		return m.toRepoScreen()
-	case "up", "k":
-		if i := m.nextSelectable(m.logIdx, -1); i >= 0 {
+	for n := 0; n < steps; n++ {
+		if i := m.nextSelectable(m.logIdx, dir); i >= 0 {
 			m.logIdx, moved = i, true
 		}
-	case "down", "j":
-		if i := m.nextSelectable(m.logIdx, 1); i >= 0 {
-			m.logIdx, moved = i, true
-		}
-	case "pgup":
-		for n := 0; n < m.logHeight(); n++ {
-			if i := m.nextSelectable(m.logIdx, -1); i >= 0 {
-				m.logIdx, moved = i, true
-			}
-		}
-	case "pgdown":
-		for n := 0; n < m.logHeight(); n++ {
-			if i := m.nextSelectable(m.logIdx, 1); i >= 0 {
-				m.logIdx, moved = i, true
-			}
-		}
-	case "home", "g":
-		if i := m.nextSelectable(-1, 1); i >= 0 {
-			m.logIdx, moved = i, true
-		}
-	case "end", "G":
-		if i := m.nextSelectable(len(m.rows), -1); i >= 0 {
-			m.logIdx, moved = i, true
-		}
-	case "enter":
-		return m.setFocus(pFiles)
-	case "r":
-		return m.quickReview("")
 	}
+	m.navFile = false
 	m.fixLogScroll()
 	if moved {
 		return m.selectTarget()
@@ -624,30 +599,94 @@ func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateFilesKeys(key string) (tea.Model, tea.Cmd) {
-	n := len(m.files)
+// setFile põe o cursor do Navegador no arquivo i e mostra o diff dele.
+func (m model) setFile(i int) (tea.Model, tea.Cmd) {
+	m.navOpen, m.navFile = true, true
 	prev := m.fileIdx
+	m.fileIdx = min(max(i, 0), len(m.files)-1)
+	m.fixLogScroll()
+	if m.fileIdx != prev || m.vtab != vtDiff {
+		m.vtab = vtDiff
+		return m, m.previewSelected()
+	}
+	return m, nil
+}
+
+// updateLogKeys: teclas do Navegador. ↑↓ andam por commits e, com o commit aberto, pelos
+// arquivos dele; → abre e ← fecha; enter num arquivo foca o diff.
+func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
+	ready := m.filesFor == m.target && len(m.files) > 0
 	switch key {
 	case "esc":
-		return m.setFocus(pLog)
-	case "up", "k":
-		m.fileIdx = max(m.fileIdx-1, 0)
+		if m.navFile {
+			m.navFile = false
+			m.fixLogScroll()
+			return m, nil
+		}
+		return m.toRepoScreen()
 	case "down", "j":
-		m.fileIdx = min(m.fileIdx+1, max(n-1, 0))
-	case "J", "ctrl+d", "pgdown", " ":
-		m.preview.HalfPageDown()
-		return m, nil
-	case "K", "ctrl+u", "pgup":
-		m.preview.HalfPageUp()
-		return m, nil
+		switch {
+		case m.navFile && m.fileIdx < len(m.files)-1:
+			return m.setFile(m.fileIdx + 1)
+		case !m.navFile && m.navOpen && ready:
+			return m.setFile(m.fileIdx)
+		}
+		return m.moveCommit(1, 1)
+	case "up", "k":
+		switch {
+		case m.navFile && m.fileIdx > 0:
+			return m.setFile(m.fileIdx - 1)
+		case m.navFile:
+			m.navFile = false
+			m.fixLogScroll()
+			return m, nil
+		}
+		return m.moveCommit(-1, 1)
+	case "right", "l":
+		if !m.navOpen {
+			m.navOpen = true
+			m.fixLogScroll()
+			return m, nil
+		}
+		if !m.navFile && ready {
+			return m.setFile(m.fileIdx)
+		}
+	case "left", "h":
+		if m.navFile {
+			m.navFile = false
+		} else {
+			m.navOpen = false
+		}
+		m.fixLogScroll()
 	case "enter":
-		return m.setFocus(pChat)
+		if m.navFile {
+			return m.focusPane(pDiff)
+		}
+		if ready {
+			return m.setFile(m.fileIdx)
+		}
+	case "J", "K": // próximo / anterior arquivo, sem passar para outro commit
+		if ready {
+			if key == "J" {
+				return m.setFile(m.fileIdx + 1)
+			}
+			return m.setFile(m.fileIdx - 1)
+		}
+	case "pgup":
+		return m.moveCommit(-1, max(m.logHeight()/2, 1))
+	case "pgdown":
+		return m.moveCommit(1, max(m.logHeight()/2, 1))
+	case "home", "g":
+		return m.moveCommit(-1, len(m.rows))
+	case "end", "G":
+		return m.moveCommit(1, len(m.rows))
 	case "r":
-		if n > 0 {
+		if m.navFile && ready {
 			return m.quickReview(m.files[m.fileIdx].Path)
 		}
+		return m.quickReview("")
 	case "o", "e":
-		if n > 0 {
+		if ready {
 			f := m.files[m.fileIdx]
 			if f.Status == "D" {
 				m.setErr("o arquivo foi removido neste alvo")
@@ -656,14 +695,9 @@ func (m model) updateFilesKeys(key string) (tea.Model, tea.Cmd) {
 			return m, openInEditor(m.repo.Root, f.Path, firstHunkLine(m.diffRaw))
 		}
 	case "d", "[", "]":
-		// Volta do documento aberto pelo modelo para o diff.
+		// Volta do documento aberto pelo modelo (ou do mapa) para o diff.
 		m.vtab = vtDiff
 		m.renderPreview()
-		return m, nil
-	}
-	m.fixFilesScroll()
-	if m.fileIdx != prev {
-		return m, m.previewSelected()
 	}
 	return m, nil
 }

@@ -120,7 +120,7 @@ func (m model) openRef(n int) (tea.Model, tea.Cmd) {
 	// Arquivo alterado no alvo: o diff, rolado até a linha.
 	for i, f := range m.files {
 		if f.Path == r.path {
-			m.fileIdx = i
+			m.fileIdx, m.navOpen = i, true
 			m.fixFilesScroll()
 			m.pendingLine = r.line
 			if m.diffPath == r.path && m.diffRaw != "" && m.previewKey == m.target+"\x00"+r.path {
