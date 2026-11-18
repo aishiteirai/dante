@@ -37,6 +37,7 @@ var chatCommands = []chatCommand{
 	{"/ler", "o modelo só lê e sugere (padrão)"},
 	{"/editar", "o modelo pode alterar arquivos, com a sua aprovação"},
 	{"/permissoes", "o que o modelo pode fazer no modo editar"},
+	{"/corrigir", "copia um pedido de correção dos achados, para colar no Claude"},
 	{"/funcao", "explica uma função (pelo nome ou colada) numa pergunta barata"},
 	{"/mapa", "gera o mapa do projeto com um modelo barato (mostra o custo antes)"},
 	{"/tour", "percorre o mapa do projeto, capítulo por capítulo"},
@@ -199,13 +200,15 @@ var explainInstructions = "Tarefa: explicar, sem procurar problemas, para quem v
 	"Agrupe por ideia, não por arquivo.\n"
 
 // Instruções da tarefa de revisão (a parte de achados muda com a ferramenta registrar_achado).
-var reviewInstructions = "Tarefa: revisar. Procure problemas nas mudanças, a partir do <diff>; abra código só se um " +
-	"problema depender de algo fora dele, tudo numa rodada de read_files com trechos (há um limite de rodadas de " +
-	"leitura por pergunta). Escreva primeiro um resumo de uma ou duas frases: o que a mudança faz na prática e o " +
-	"veredito (pronta, ou o principal risco). Depois chame registrar_achado uma vez " +
-	"para cada problema, do mais grave para o menos grave, todos na mesma resposta, e não repita no texto o que já " +
-	"registrou. Se estiver tudo bem, diga isso no resumo e não registre nada. Se não puder usar ferramentas, liste os " +
-	"pontos no texto, cada um com arquivo:linha, o problema, por que importa e a sugestão.\n"
+var reviewInstructions = "Tarefa: revisar. Parta do <diff>; abra código só se uma conclusão depender de algo fora " +
+	"dele, tudo numa rodada de read_files com trechos (há um limite de rodadas de leitura por pergunta). Escreva:\n" +
+	"- primeira linha, em negrito: o que a mudança faz na prática e o veredito (pronta, ou o principal risco);\n" +
+	"- **Impacto:** quem é afetado (use <quem_chama>), o que muda para quem chama, o que pode quebrar e se há " +
+	"testes cobrindo; 2 a 4 tópicos curtos.\n" +
+	"Depois chame registrar_achado uma vez para cada problema (bug, segurança, impedimento ou limpeza que valha a " +
+	"pena), do mais grave para o menos grave, todos na mesma resposta, e não repita no texto o que já registrou. " +
+	"Siga o bloco <verificar>, quando houver. Se estiver tudo bem, diga isso e não registre nada. Se não puder usar " +
+	"ferramentas, liste os pontos no texto, cada um com arquivo:linha, o problema, por que importa e a sugestão.\n"
 
 // commandSuggestions: comandos que começam com o que foi digitado (só enquanto se digita
 // o primeiro comando).

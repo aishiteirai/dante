@@ -198,3 +198,34 @@ func TestMergedSubjects(t *testing.T) {
 		t.Fatal("commit comum não é merge")
 	}
 }
+
+func TestBranchComoPR(t *testing.T) {
+	r := setup(t) // main com 2 commits
+	run(t, r.Root, "git", "checkout", "-q", "-b", "feat/x")
+	os.WriteFile(filepath.Join(r.Root, "novo.py"), []byte("z = 1\n"), 0o644)
+	run(t, r.Root, "git", "add", ".")
+	run(t, r.Root, "git", "commit", "-qm", "feat: novo")
+	os.WriteFile(filepath.Join(r.Root, "novo.py"), []byte("z = 2\n"), 0o644)
+	run(t, r.Root, "git", "commit", "-qam", "fix: ajuste")
+	// A main anda depois que a branch saiu: isso não deve entrar no "PR".
+	run(t, r.Root, "git", "checkout", "-q", "main")
+	os.WriteFile(filepath.Join(r.Root, "outro.py"), []byte("w = 1\n"), 0o644)
+	run(t, r.Root, "git", "add", ".")
+	run(t, r.Root, "git", "commit", "-qm", "main andou")
+	run(t, r.Root, "git", "checkout", "-q", "feat/x")
+
+	if r.BaseBranch() != "main" {
+		t.Fatalf("base = %q", r.BaseBranch())
+	}
+	rng := Range("main", "feat/x")
+	if subs := r.RangeCommits(rng, 10); len(subs) != 2 || !strings.HasSuffix(subs[0], "fix: ajuste") {
+		t.Fatalf("commits = %v", subs)
+	}
+	fs, err := r.Files(rng)
+	if err != nil || len(fs) != 1 || fs[0].Path != "novo.py" || fs[0].Status != "A" {
+		t.Fatalf("arquivos = %+v %v", fs, err)
+	}
+	if Tip(rng) != "feat/x" || Tip("abc") != "abc" {
+		t.Fatal("Tip")
+	}
+}

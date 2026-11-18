@@ -61,7 +61,7 @@ func (m model) explainFuncText(arg string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.setInfo("procurando " + name + "…")
-	r, ref := m.repo, m.target
+	r, ref := m.repo, repo.Tip(m.target)
 	pasted := strings.Contains(arg, "\n") || strings.Contains(arg, "(")
 	return m, func() tea.Msg {
 		for _, sha := range []string{ref, repo.WorkTree} {
@@ -206,7 +206,7 @@ func (m model) funcLocation() (path, ref string, line int, ok bool) {
 		if m.diffPath == "" {
 			return "", "", 0, false
 		}
-		path, ref, line = m.diffPath, m.target, m.markLine
+		path, ref, line = m.diffPath, repo.Tip(m.target), m.markLine
 		if line <= 0 {
 			if h := m.currentHunk(); h < len(m.hunkLines) {
 				line = m.hunkLines[h] + 3 // o trecho começa com 3 linhas de contexto
@@ -217,7 +217,7 @@ func (m model) funcLocation() (path, ref string, line int, ok bool) {
 		if m.docIsDiff {
 			return "", "", 0, false
 		}
-		path, ref, ok = docLocation(m.docTitle, m.target)
+		path, ref, ok = docLocation(m.docTitle, repo.Tip(m.target))
 		line = m.markLine
 		if line <= 0 && m.preview.YOffset < len(m.rowLines) {
 			line = m.rowLines[m.preview.YOffset] // a primeira linha visível

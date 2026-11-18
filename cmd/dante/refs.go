@@ -137,7 +137,7 @@ func (m model) openRef(n int) (tea.Model, tea.Cmd) {
 	exec := m.repo.Executor(func() string { return m.target })
 	args := map[string]any{"path": r.path, "inteiro": true}
 	if m.target != repo.WorkTree {
-		args["ref"] = m.target
+		args["ref"] = repo.Tip(m.target)
 	}
 	b, _ := json.Marshal(args)
 	title := fmt.Sprintf("%s:%d · referência [%d]", r.path, r.line, n)
@@ -183,6 +183,16 @@ func (m model) updateRefKeys(key string) (tea.Model, tea.Cmd) {
 		m.refIdx = min(m.refIdx+1, max(len(m.refs)-1, 0))
 	case "enter":
 		return m.openRef(m.refIdx + 1)
+	case "c": // pede a correção deste achado ao Claude
+		if f := m.findingByRef(m.refIdx + 1); f != nil {
+			m.mode = modeNormal
+			m.copyFixRequest([]finding{*f})
+		} else {
+			m.setInfo("esta referência não é de um achado da revisão")
+		}
+	case "t": // pede a correção de todos os achados
+		m.mode = modeNormal
+		m.copyFixRequest(m.allFindings())
 	default:
 		if n, err := strconv.Atoi(key); err == nil {
 			// Até 9 referências, um dígito abre; acima disso, dois dígitos seguidos.
@@ -218,5 +228,8 @@ func (m model) refsPopup() string {
 		}
 	}
 	b.WriteString("\n" + subtleStyle.Render("número ou enter abre no Visualizador · esc fecha"))
+	if len(m.allFindings()) > 0 {
+		b.WriteString("\n" + subtleStyle.Render("c copia o pedido de correção do achado · t de todos (para colar no Claude)"))
+	}
 	return boxStyle.Padding(1, 2).Render(b.String())
 }

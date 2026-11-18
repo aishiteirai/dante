@@ -4,12 +4,38 @@ Revisor de código para o terminal: o usuário navega por commits e arquivos alt
 conversa com um modelo (Claude, DeepSeek, Qwen, Ollama, OpenRouter...) que abre os arquivos
 com ferramentas de leitura e opina sobre as mudanças.
 
+## Propósito (decidido com o Ryan)
+
+O dante é um **copiloto de leitura** que fica entre a pessoa e o agente que escreve código
+(Claude Code e afins): ajuda a entender um projeto, saber onde mexer, revisar o que o agente
+fez e organizar commits. **Não compete em autonomia de edição.** É **open source** para uso
+diário de qualquer pessoa: funcionalidades indispensáveis de um bom harness entram mesmo sem
+pedido explícito (atalhos claros, erros úteis, config simples, docs, testes, estabilidade).
+
+Princípios: montar o contexto **sem o modelo** (git, grep, mapa) e gastar o mínimo de tokens;
+funcionar com qualquer provedor, inclusive gratuitos e locais; segredos nunca saem da máquina;
+interface e respostas em português, didáticas quando pedido.
+
+Fluxo que guia o roteiro: projeto novo → entender a estrutura → saber onde mexer → pedir ao
+Claude → revisar o que ele fez → commits e PR organizados.
+
+Fases:
+1. Revisão: branch como um PR (base...branch), seção Impacto, listas de verificação por tipo
+   de mudança, "pedir a correção ao Claude" (texto pronto a partir dos achados).
+2. Commits: planejar a divisão em commits, mensagens (Conventional Commits) e descrição do PR.
+3. Onboarding: explorador do repositório inteiro, aba Arquivo, "onde mexo para fazer X?" com
+   briefing para o Claude, tour por funcionalidade.
+4. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
+5. Integração: comandos sem interface (`dante review/explain/ask`) e servidor MCP.
+Em paralelo: conjunto de perguntas de teste para medir as respostas.
+
 ## Convenções
 
 - Interface, mensagens, docs e commits em português.
 - Commits como `Ryan Alvarenga <ryancorazzaalvarenga@gmail.com>` (a conta do GitHub dele,
   não o e-mail profissional), sem linhas de co-autoria, até ele pedir o contrário.
 - Antes de commitar: `go vet ./... && go test ./...` precisam passar (`make test`).
+- Commitar e fazer merge só com a aprovação do Ryan.
 - O dante é um binário Go independente; a CLI Python `revisor/` é opcional (hooks/CI).
 
 ## Mapa

@@ -173,7 +173,15 @@ func (m model) contextBlock() string {
 	if m.branch != "" {
 		fmt.Fprintf(&b, "Branch atual: %s\n", m.branch)
 	}
-	if m.target == repo.WorkTree {
+	if base, tip, ok := repo.SplitRange(m.target); ok {
+		subs := m.repo.RangeCommits(m.target, 30)
+		fmt.Fprintf(&b, "Alvo: a branch %s inteira, comparada com %s desde que saiu dela, como um PR (%s):\n",
+			tip, base, plural(len(subs), "commit", "commits"))
+		for _, l := range subs {
+			b.WriteString("  " + l + "\n")
+		}
+		fmt.Fprintf(&b, "Para ler os arquivos como estão na branch, use read_file com ref=%s.\n", tip)
+	} else if m.target == repo.WorkTree {
 		b.WriteString("Alvo: mudanças locais não commitadas (working tree comparado com HEAD; arquivos com status ? ainda não estão no git)\n")
 	} else {
 		msg := m.repo.CommitMessage(m.target)
@@ -293,6 +301,9 @@ func (m *model) diffBlock(scope string) string {
 			m.markPacked(f)
 		}
 	}
+	if p.Included > 0 && m.task == taskRevisar {
+		b.WriteString(reviewChecklist(p.Diff))
+	}
 	if len(p.Left) > 0 {
 		b.WriteString("<fora_do_diff>\nAlterados, mas sem o diff acima (peça git_diff com path se precisar):\n")
 		for i, l := range p.Left {
@@ -367,6 +378,11 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		arg := strings.TrimSpace(text[len(strings.Fields(text)[0]):])
 		m.input.Reset()
 		return m.explainFuncText(arg)
+	}
+	if f := fold(text); f == "/corrigir" || f == "/pedido" {
+		m.input.Reset()
+		m.copyFixRequest(m.allFindings())
+		return m, nil
 	}
 	if !strings.HasPrefix(text, "/") && asksAboutPastedFunc(text) {
 		return m.explainFuncText(text)

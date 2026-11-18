@@ -36,9 +36,11 @@ var efforts = []string{"low", "medium", "high", "xhigh", "max"}
 type logRow struct {
 	worktree bool
 	c        repo.Commit
+	rng      string // "base...branch": a branch atual inteira, como um PR
+	ahead    int
 }
 
-func (r logRow) selectable() bool { return r.worktree || r.c.SHA != "" }
+func (r logRow) selectable() bool { return r.worktree || r.rng != "" || r.c.SHA != "" }
 
 type model struct {
 	cfg           config.Config
@@ -239,6 +241,8 @@ type logMsg struct {
 	commits []repo.Commit
 	dirty   int
 	branch  string
+	base    string // branch principal, para revisar a atual como um PR
+	ahead   int    // commits da branch atual que a base não tem
 	err     error
 }
 
@@ -269,7 +273,11 @@ func loadLog(r repo.Repo) tea.Cmd {
 	return func() tea.Msg {
 		cs, err := r.Log(800)
 		wt, _ := r.Files(repo.WorkTree)
-		return logMsg{root: r.Root, commits: cs, dirty: len(wt), branch: r.Branch(), err: err}
+		msg := logMsg{root: r.Root, commits: cs, dirty: len(wt), branch: r.Branch(), err: err}
+		if base := r.BaseBranch(); base != "" && msg.branch != "" && base != msg.branch && base != "origin/"+msg.branch {
+			msg.base, msg.ahead = base, len(r.RangeCommits(repo.Range(base, msg.branch), 500))
+		}
+		return msg
 	}
 }
 
@@ -517,6 +525,9 @@ func (m model) onLog(msg logMsg) (tea.Model, tea.Cmd) {
 	if msg.dirty > 0 {
 		rows = append(rows, logRow{worktree: true})
 	}
+	if msg.ahead > 0 {
+		rows = append(rows, logRow{rng: repo.Range(msg.base, msg.branch), ahead: msg.ahead})
+	}
 	for _, c := range msg.commits {
 		rows = append(rows, logRow{c: c})
 	}
@@ -524,7 +535,8 @@ func (m model) onLog(msg logMsg) (tea.Model, tea.Cmd) {
 	// Mantém a seleção no mesmo alvo, se ele ainda existir.
 	m.logIdx = -1
 	for i, r := range rows {
-		if (r.worktree && prevTarget == repo.WorkTree) || (!r.worktree && r.c.SHA != "" && r.c.SHA == prevTarget) {
+		if (r.worktree && prevTarget == repo.WorkTree) || (r.rng != "" && r.rng == prevTarget) ||
+			(!r.worktree && r.c.SHA != "" && r.c.SHA == prevTarget) {
 			m.logIdx = i
 			break
 		}
@@ -546,7 +558,9 @@ func (m model) selectedTarget() string {
 	if m.logIdx < 0 || m.logIdx >= len(m.rows) {
 		return repo.WorkTree
 	}
-	if r := m.rows[m.logIdx]; !r.worktree {
+	if r := m.rows[m.logIdx]; r.rng != "" {
+		return r.rng
+	} else if !r.worktree {
 		return r.c.SHA
 	}
 	return repo.WorkTree
@@ -747,6 +761,9 @@ func repoDisplayName(root string) string { return filepath.Base(root) }
 func (m model) targetLabel() string {
 	if m.target == repo.WorkTree {
 		return fmt.Sprintf("mudanças locais (%s)", plural(m.dirty, "arquivo", "arquivos"))
+	}
+	if base, tip, ok := repo.SplitRange(m.target); ok {
+		return fmt.Sprintf("branch %s × %s (como um PR)", tip, base)
 	}
 	for _, r := range m.rows {
 		if r.c.SHA == m.target {
