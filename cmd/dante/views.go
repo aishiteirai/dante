@@ -74,17 +74,12 @@ func (m model) innerRows(p paneID) int {
 }
 
 func (m model) logHeight() int { return m.innerRows(pLog) }
-func (m model) filesRows() int { return m.innerRows(pFiles) }
 
 // ---- moldura dos painéis (título na borda, como no noct) ----
 
 func (m model) paneTitle(p paneID) (title, extra string) {
 	title = fmt.Sprintf("[%d] %s", p+1, paneNames[p])
 	switch p {
-	case pFiles:
-		extra = m.targetLabel()
-	case pDiff:
-		title = fmt.Sprintf("[%d] Visualizador", p+1)
 	case pChat:
 		if m.modelName == "" {
 			extra = "sem modelo (m)"
@@ -195,8 +190,6 @@ func (m model) paneContent(p paneID, r rect) string {
 	switch p {
 	case pLog:
 		return m.viewLog(w, h)
-	case pFiles:
-		return m.viewFiles(w, h)
 	case pDiff:
 		return m.visualizerHeader(w) + m.preview.View()
 	case pChat:
@@ -272,7 +265,7 @@ var commandHelp = [][2]string{
 	{"w", "empilhar / separar a coluna"},
 	{"f", "tela cheia"},
 	{"z", "minimizar o painel"},
-	{"1 2 3 4", "ir para o painel (restaura)"},
+	{"1 2 3", "Navegador, Visualizador, Chat (restaura)"},
 	{"0", "voltar ao layout padrão"},
 	{"m", "trocar o modelo"},
 	{"o", "abrir outro repositório"},
@@ -374,9 +367,13 @@ func (m model) helpLine() string {
 	base := "ctrl+space comandos · alt+setas foco · "
 	switch m.focus {
 	case pLog:
-		return base + "↑↓ commit · r revisar · enter arquivos · q sair"
-	case pFiles:
-		return base + "↑↓ arquivo · r revisar · o editor · enter chat"
+		if m.navFile {
+			return base + "↑↓ arquivo · ← volta ao commit · enter foca o diff · r revisa o arquivo · o editor · tab chat"
+		}
+		if m.navOpen {
+			return base + "↑↓ anda · ← fecha os arquivos · r revisa o commit · tab chat · q sair"
+		}
+		return base + "↑↓ commit · → abre os arquivos · r revisa o commit · tab chat · q sair"
 	case pDiff:
 		if m.vtab == vtMap {
 			return base + "←→ capítulo · [ ] aba · ctrl+g referências · enter chat"

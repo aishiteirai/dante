@@ -113,7 +113,7 @@ func (m model) command(k string) (tea.Model, tea.Cmd, bool) {
 		m.layoutChanged()
 		nm, cmd := m.focusPane(m.lay.visiblePanes()[0])
 		return nm, cmd, true
-	case "1", "2", "3", "4":
+	case "1", "2", "3":
 		nm, cmd := m.focusPane(paneID(k[0] - '1'))
 		return nm, cmd, true
 	case "0":
@@ -282,15 +282,13 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
 		return m, tea.Quit
-	case "1", "2", "3", "4", "m", "u":
+	case "1", "2", "3", "m", "u":
 		nm, cmd, _ := m.command(key)
 		return nm, cmd
 	}
 	switch m.focus {
 	case pLog:
 		return m.updateLogKeys(key)
-	case pFiles:
-		return m.updateFilesKeys(key)
 	case pDiff:
 		return m.updateDiffKeys(key)
 	}
@@ -384,12 +382,6 @@ func (m model) wheel(p paneID, dir int) (tea.Model, tea.Cmd) {
 			m.fixLogScroll()
 			return m.selectTarget()
 		}
-	case pFiles:
-		key := "down"
-		if dir < 0 {
-			key = "up"
-		}
-		return m.updateFilesKeys(key)
 	case pDiff:
 		if dir < 0 {
 			m.preview.ScrollUp(3)

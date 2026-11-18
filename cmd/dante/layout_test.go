@@ -5,7 +5,7 @@ import "testing"
 func TestComputeCobreATela(t *testing.T) {
 	l := defaultLayout()
 	rs := l.compute(0, 1, 150, 40, pLog, false)
-	if len(rs) != 4 {
+	if len(rs) != 3 {
 		t.Fatalf("rects = %v", rs)
 	}
 	area := 0
@@ -15,8 +15,12 @@ func TestComputeCobreATela(t *testing.T) {
 	if area != 150*40 {
 		t.Fatalf("área %d, esperava %d", area, 150*40)
 	}
-	if rs[pLog].x != 0 || rs[pFiles].y <= rs[pLog].y || rs[pChat].x+rs[pChat].w != 150 {
+	// Navegador à esquerda; Visualizador em cima do chat, os dois com a mesma largura.
+	if rs[pLog].x != 0 || rs[pChat].y <= rs[pDiff].y || rs[pChat].w != rs[pDiff].w || rs[pChat].x+rs[pChat].w != 150 {
 		t.Fatalf("posições: %v", rs)
+	}
+	if rs[pDiff].w < 100 {
+		t.Fatalf("o Visualizador deveria ser largo: %v", rs[pDiff])
 	}
 }
 
@@ -27,8 +31,8 @@ func TestVizinhoPorDirecao(t *testing.T) {
 		dx, dy int
 		want   paneID
 	}{
-		{pLog, 1, 0, pDiff}, {pFiles, 0, -1, pLog}, {pLog, 0, 1, pFiles},
-		{pDiff, 1, 0, pChat}, {pChat, -1, 0, pDiff}, {pFiles, 1, 0, pDiff},
+		{pLog, 1, 0, pDiff}, {pDiff, 0, 1, pChat}, {pChat, 0, -1, pDiff},
+		{pChat, -1, 0, pLog}, {pDiff, -1, 0, pLog},
 	}
 	for _, c := range cases {
 		if got, _ := neighbor(rs, c.from, c.dx, c.dy); got != c.want {
@@ -36,27 +40,22 @@ func TestVizinhoPorDirecao(t *testing.T) {
 		}
 	}
 	if _, ok := neighbor(rs, pLog, -1, 0); ok {
-		t.Error("à esquerda do Commits não há nada")
+		t.Error("à esquerda do Navegador não há nada")
 	}
 }
 
 func TestMoverEmpilharMinimizar(t *testing.T) {
 	l := defaultLayout()
-	// Arquivos vai para a coluna do Diff, na mesma posição (embaixo dele, pois o Diff está sozinho).
-	if !l.moveH(pFiles, 1) {
+	// O chat vai para a coluna do Navegador.
+	if !l.moveH(pChat, -1) {
 		t.Fatal("moveH falhou")
 	}
-	if ci, _ := l.find(pFiles); ci != 1 || len(l.Cols[0].Panes) != 1 || !l.valid() {
+	if ci, _ := l.find(pChat); ci != 0 || len(l.Cols[1].Panes) != 1 || !l.valid() {
 		t.Fatalf("layout = %+v", l.Cols)
 	}
-	// Chat sozinho na borda direita: não sai.
-	if l.moveH(pChat, 1) {
+	// O Visualizador sozinho na borda direita: não sai.
+	if l.moveH(pDiff, 1) {
 		t.Fatal("coluna sozinha na borda não deveria mover")
-	}
-	// Commits sozinho, levado à direita, entra na coluna do meio.
-	l.moveH(pLog, 1)
-	if len(l.Cols) != 2 || len(l.Cols[0].Panes) != 3 {
-		t.Fatalf("esperava 2 colunas: %+v", l.Cols)
 	}
 	// Painel que divide a coluna, na borda, vira coluna nova.
 	l.moveH(pLog, -1)
@@ -65,10 +64,10 @@ func TestMoverEmpilharMinimizar(t *testing.T) {
 	}
 	// Empilhar: os não ativos ocupam uma linha.
 	l = defaultLayout()
-	l.toggleStack(pFiles)
-	rs := l.compute(0, 0, 150, 40, pFiles, false)
-	if rs[pLog].h != 1 || rs[pFiles].h != 39 {
-		t.Fatalf("pilha: log=%v files=%v", rs[pLog], rs[pFiles])
+	l.toggleStack(pChat)
+	rs := l.compute(0, 0, 150, 40, pChat, false)
+	if rs[pDiff].h != 1 || rs[pChat].h != 39 {
+		t.Fatalf("pilha: diff=%v chat=%v", rs[pDiff], rs[pChat])
 	}
 	// Minimizar some do layout; o último painel não minimiza.
 	l = defaultLayout()
@@ -77,13 +76,24 @@ func TestMoverEmpilharMinimizar(t *testing.T) {
 		t.Fatal("minimizado ainda aparece")
 	}
 	l.minimize(pLog)
-	l.minimize(pFiles)
 	if l.minimize(pChat) {
 		t.Fatal("o último painel visível não pode minimizar")
 	}
 	l.restore(pDiff)
 	if l.isMinimized(pDiff) {
 		t.Fatal("restore falhou")
+	}
+}
+
+func TestLayoutAntigoViraOPadrao(t *testing.T) {
+	// layout.json da versão com 4 painéis (Commits, Arquivos, Diff, Chat).
+	old := layout{Cols: []column{
+		{Panes: []paneID{0, 1}, Sizes: []float64{0.5, 0.5}, Width: 0.3},
+		{Panes: []paneID{2}, Sizes: []float64{1}, Width: 0.4},
+		{Panes: []paneID{3}, Sizes: []float64{1}, Width: 0.3},
+	}}
+	if old.valid() {
+		t.Fatal("o layout antigo deveria ser recusado")
 	}
 }
 

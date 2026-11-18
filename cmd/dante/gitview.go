@@ -175,18 +175,65 @@ func (m model) logLines(w int) []logLine {
 
 func (m model) logRow(i int, s string, w int, sel bool) logLine {
 	s = truncateW(s, w)
-	if sel {
+	if sel && !m.navFile { // com o cursor num arquivo, o commit fica só em negrito
 		s = cursorBg.Render(padTo(s, w))
 	}
 	return logLine{row: i, text: s}
 }
 
-// fixLogScroll mantém as duas linhas do commit selecionado visíveis.
+// ---- Navegador: commits, com os arquivos do commit selecionado abertos embaixo dele ----
+
+// navLine é uma linha do Navegador. file: -2 = linha de commit (ou de grafo, ou título de
+// data), -1 = título de pasta, >= 0 = índice em m.files.
+type navLine struct {
+	row, file int
+	text      string
+}
+
+func (m model) navLines(w int) []navLine {
+	logs := m.logLines(w)
+	var out []navLine
+	last := -1 // última linha do commit selecionado
+	for i, l := range logs {
+		if l.row == m.logIdx {
+			last = i
+		}
+	}
+	for i, l := range logs {
+		out = append(out, navLine{row: l.row, file: -2, text: l.text})
+		if i != last || !m.navOpen {
+			continue
+		}
+		switch {
+		case m.filesFor != m.target || m.files == nil:
+			out = append(out, navLine{row: l.row, file: -1, text: "    " + subtleStyle.Render("carregando…")})
+		case len(m.files) == 0:
+			out = append(out, navLine{row: l.row, file: -1, text: "    " + subtleStyle.Render("nenhum arquivo alterado")})
+		default:
+			// Os arquivos continuam as linhas do grafo do commit.
+			cont := "  "
+			if r := m.rows[m.logIdx]; !r.worktree && !linearHistory(m.rows) {
+				cont = subtleStyle.Render(graphCont(r.c.Graph))
+			}
+			for _, f := range m.fileLines(w - lipgloss.Width(cont)) {
+				out = append(out, navLine{row: l.row, file: f.file, text: cont + f.text})
+			}
+		}
+	}
+	return out
+}
+
+// fixLogScroll mantém o cursor do Navegador visível: as duas linhas do commit (com o título
+// de data acima) ou o arquivo (com a pasta acima).
 func (m *model) fixLogScroll() {
-	lines := m.logLines(80)
+	lines := m.navLines(80)
 	first, last := -1, -1
 	for i, l := range lines {
-		if l.row == m.logIdx {
+		hit := l.row == m.logIdx && l.file == -2
+		if m.navFile {
+			hit = l.file == m.fileIdx && l.row == m.logIdx
+		}
+		if hit {
 			if first < 0 {
 				first = i
 			}
@@ -197,8 +244,7 @@ func (m *model) fixLogScroll() {
 		return
 	}
 	h := m.logHeight()
-	// Mostra também o título do grupo logo acima, quando houver.
-	if first > 0 && lines[first-1].row == -1 {
+	if first > 0 && (lines[first-1].row == -1 || (m.navFile && lines[first-1].file == -1)) {
 		first--
 	}
 	if first < m.logOff {
@@ -210,6 +256,9 @@ func (m *model) fixLogScroll() {
 	m.logOff = max(m.logOff, 0)
 }
 
+// fixFilesScroll: os arquivos ficam no Navegador.
+func (m *model) fixFilesScroll() { m.fixLogScroll() }
+
 func (m model) viewLog(w, h int) string {
 	if m.rows == nil {
 		return subtleStyle.Render("carregando…")
@@ -217,7 +266,7 @@ func (m model) viewLog(w, h int) string {
 	if len(m.rows) == 0 {
 		return subtleStyle.Render("Repositório sem commits.")
 	}
-	lines := m.logLines(w)
+	lines := m.navLines(w)
 	var b strings.Builder
 	for i := m.logOff; i < len(lines) && i < m.logOff+h; i++ {
 		b.WriteString(lines[i].text + "\n")
@@ -238,10 +287,8 @@ func sortFiles(fs []repo.FileChange) {
 	})
 }
 
-var fileWords = map[string]string{
-	"A": "+ novo", "M": "~ modif.", "D": "− removido", "R": "→ renom.", "C": "⧉ cópia",
-	"T": "~ tipo", "U": "! conflito", "?": "+ novo",
-}
+// Símbolo de cada situação do arquivo (o Visualizador mostra a palavra por extenso).
+var fileSymbols = map[string]string{"A": "+", "M": "~", "D": "−", "R": "→", "C": "⧉", "T": "~", "U": "!", "?": "+"}
 
 type fileLine struct {
 	file int // índice em m.files (-1 = título de pasta)
@@ -263,9 +310,9 @@ func (m model) fileLines(w int) []fileLine {
 		if !ok {
 			st = subtleStyle
 		}
-		word, ok := fileWords[f.Status]
+		sym, ok := fileSymbols[f.Status]
 		if !ok {
-			word = f.Status
+			sym = f.Status
 		}
 		name := path.Base(f.Path)
 		if f.OldPath != "" && f.Status == "R" {
@@ -279,57 +326,17 @@ func (m model) fileLines(w int) []fileLine {
 		if d == "." {
 			indent = ""
 		}
-		left := indent + st.Render(padTo(word, 11)) + " "
+		left := indent + st.Render(sym) + " "
 		room := w - lipgloss.Width(left) - lipgloss.Width(stats) - 1
 		if i == m.fileIdx {
 			name = boldStyle.Render(name)
 		}
 		line := left + padTo(truncateW(name, max(room, 4)), max(room, 4)) + " " + stats
 		line = truncateW(line, w)
-		if i == m.fileIdx {
+		if i == m.fileIdx && m.navFile {
 			line = cursorBg.Render(padTo(line, w))
 		}
 		out = append(out, fileLine{file: i, text: line})
 	}
 	return out
-}
-
-func (m *model) fixFilesScroll() {
-	lines := m.fileLines(80)
-	at := -1
-	for i, l := range lines {
-		if l.file == m.fileIdx {
-			at = i
-			break
-		}
-	}
-	if at < 0 {
-		return
-	}
-	if at > 0 && lines[at-1].file == -1 { // mostra a pasta junto
-		at--
-	}
-	h := m.filesRows()
-	if at < m.fileOff {
-		m.fileOff = at
-	}
-	if at+1 >= m.fileOff+h {
-		m.fileOff = at + 2 - h
-	}
-	m.fileOff = max(m.fileOff, 0)
-}
-
-func (m model) viewFiles(w, h int) string {
-	switch {
-	case m.files == nil:
-		return subtleStyle.Render("carregando…")
-	case len(m.files) == 0:
-		return subtleStyle.Render("nenhum arquivo alterado")
-	}
-	lines := m.fileLines(w)
-	var b strings.Builder
-	for i := m.fileOff; i < len(lines) && i < m.fileOff+h; i++ {
-		b.WriteString(lines[i].text + "\n")
-	}
-	return b.String()
 }

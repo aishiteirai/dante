@@ -81,7 +81,7 @@ func TestTelaPrincipalRenderiza(t *testing.T) {
 	m.entries = []entry{{kind: eUser, text: "oi"}, {kind: eAssistant, text: "**olá**"}}
 	m.refreshChat()
 	v := m.View()
-	for _, want := range []string{"Commits", "Mudanças locais", "a.go", "deepseek-chat", "olá"} {
+	for _, want := range []string{"Navegador", "Mudanças locais", "a.go", "deepseek-chat", "olá"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("tela sem %q", want)
 		}
@@ -200,23 +200,35 @@ func TestMouseFocoEArrasto(t *testing.T) {
 	if m.focus != pChat {
 		t.Fatalf("foco = %s", paneNames[m.focus])
 	}
-	// Arrastar a borda entre Diff e Chat 10 colunas para a esquerda.
+	// Arrastar a borda entre o Navegador e o Visualizador 10 colunas para a direita.
 	before := m.rects[pDiff].w
-	border := chat.x
-	nm, _ = m.Update(tea.MouseMsg{X: border, Y: chat.y + 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	border := m.rects[pDiff].x
+	nm, _ = m.Update(tea.MouseMsg{X: border, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = nm.(model)
 	if m.drag == nil || !m.drag.vertical {
 		t.Fatal("deveria começar a arrastar a borda")
 	}
-	nm, _ = m.Update(tea.MouseMsg{X: border - 10, Y: chat.y + 3, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	nm, _ = m.Update(tea.MouseMsg{X: border + 10, Y: 5, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
 	m = nm.(model)
-	nm, _ = m.Update(tea.MouseMsg{X: border - 10, Y: chat.y + 3, Action: tea.MouseActionRelease})
+	nm, _ = m.Update(tea.MouseMsg{X: border + 10, Y: 5, Action: tea.MouseActionRelease})
 	m = nm.(model)
 	if got := m.rects[pDiff].w; got < before-11 || got > before-9 {
-		t.Fatalf("largura do Diff %d -> %d, esperava ~%d", before, got, before-10)
+		t.Fatalf("largura do Visualizador %d -> %d, esperava ~%d", before, got, before-10)
 	}
-	if m.rects[pDiff].w+m.rects[pChat].w+m.rects[pLog].w != 150 {
+	if m.rects[pDiff].w != m.rects[pChat].w || m.rects[pDiff].w+m.rects[pLog].w != 150 {
 		t.Fatal("as colunas não somam a largura da tela")
+	}
+	// A borda entre o Visualizador e o chat sobe 4 linhas.
+	d := m.rects[pDiff]
+	h := d.h
+	nm, _ = m.Update(tea.MouseMsg{X: d.x + 20, Y: d.y + d.h - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m = nm.(model)
+	nm, _ = m.Update(tea.MouseMsg{X: d.x + 20, Y: d.y + d.h - 5, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	m = nm.(model)
+	nm, _ = m.Update(tea.MouseMsg{X: d.x + 20, Y: d.y + d.h - 5, Action: tea.MouseActionRelease})
+	m = nm.(model)
+	if got := m.rects[pDiff].h; got != h-4 {
+		t.Fatalf("altura do Visualizador %d -> %d", h, got)
 	}
 }
 

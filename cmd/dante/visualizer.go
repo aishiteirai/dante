@@ -225,6 +225,9 @@ func (m model) visualizerHeader(w int) string {
 		gap := max(w-lipgloss.Width(left)-lipgloss.Width(right), 1)
 		l1 = truncateW(left+strings.Repeat(" ", gap)+right, w)
 		l2 = subtleStyle.Render(m.targetLabel())
+		if len(m.files) > 1 {
+			l2 += subtleStyle.Render(fmt.Sprintf(" · arquivo %d de %d", m.fileIdx+1, len(m.files)))
+		}
 		if m.diffCtx != defaultDiffCtx {
 			l2 += subtleStyle.Render(fmt.Sprintf(" · %d linhas de contexto", m.diffCtx))
 		}
@@ -345,7 +348,7 @@ func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 			return m.quickReview(m.files[m.fileIdx].Path)
 		}
 	case "esc":
-		return m.focusPane(pFiles)
+		return m.focusPane(pLog)
 	case "enter":
 		return m.focusPane(pChat)
 	}

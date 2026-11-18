@@ -354,7 +354,7 @@ func (m model) updateChatKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setInfo("cancelando…")
 			return m, nil
 		}
-		return m.setFocus(pFiles)
+		return m.setFocus(pLog)
 	case "pgup":
 		m.chatView.HalfPageUp()
 		return m, nil
@@ -786,14 +786,8 @@ func (m *model) refreshChat() {
 
 func (m model) chatWelcome(w int) string {
 	lines := []string{
-		subtleStyle.Render("Escolha um commit e um arquivo e pergunte o que quiser."),
-		"",
-		subtleStyle.Render("Atalhos:"),
-		subtleStyle.Render("  r no painel de commits   revisa o alvo inteiro"),
-		subtleStyle.Render("  r no painel de arquivos  revisa o arquivo"),
-		"",
-		subtleStyle.Render("O modelo abre os arquivos sozinho, e o"),
-		subtleStyle.Render("painel do meio mostra o que ele está lendo."),
+		subtleStyle.Render("Pergunte sobre o commit ou o arquivo selecionado no Navegador."),
+		subtleStyle.Render("r revisa · / comandos (/explicar, /editar, /mapa…) · o modelo abre os arquivos sozinho"),
 	}
 	return lipgloss.NewStyle().Width(w).Render(strings.Join(lines, "\n"))
 }
