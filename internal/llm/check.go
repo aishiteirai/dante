@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -45,9 +46,10 @@ func CheckKey(ctx context.Context, p Provider) error {
 	if err != nil {
 		return fmt.Errorf("não consegui conectar em %s", p.BaseURL)
 	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	resp.Body.Close()
 	switch {
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
+	case resp.StatusCode == 401 || resp.StatusCode == 403 || (resp.StatusCode == 400 && invalidKeyMsg(string(body))):
 		return ErrInvalidKey
 	case resp.StatusCode >= 300:
 		return fmt.Errorf("o provedor respondeu HTTP %d ao teste", resp.StatusCode)
