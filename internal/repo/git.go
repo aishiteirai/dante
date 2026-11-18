@@ -51,11 +51,17 @@ type Commit struct {
 	Author  string
 	When    string
 	Refs    string
+	Time    int64 // data do autor (unix), para datas relativas em português
+}
+
+// CommitStat é o tamanho de um commit: arquivos alterados e linhas.
+type CommitStat struct {
+	Files, Add, Del int
 }
 
 func (r Repo) Log(n int) ([]Commit, error) {
 	out, err := r.git("log", "--graph", "--all", "--date-order", fmt.Sprintf("-n%d", n),
-		"--format=%x1f%H%x1f%h%x1f%s%x1f%an%x1f%ar%x1f%D")
+		"--format=%x1f%H%x1f%h%x1f%s%x1f%an%x1f%ar%x1f%D%x1f%at")
 	if err != nil {
 		if strings.Contains(err.Error(), "does not have any commits") {
 			return nil, nil
@@ -68,13 +74,63 @@ func (r Repo) Log(n int) ([]Commit, error) {
 			continue
 		}
 		p := strings.Split(line, "\x1f")
-		if len(p) < 7 {
+		if len(p) < 8 {
 			cs = append(cs, Commit{Graph: line})
 			continue
 		}
-		cs = append(cs, Commit{Graph: p[0], SHA: p[1], Short: p[2], Subject: p[3], Author: p[4], When: p[5], Refs: p[6]})
+		t, _ := strconv.ParseInt(strings.TrimSpace(p[7]), 10, 64)
+		cs = append(cs, Commit{Graph: p[0], SHA: p[1], Short: p[2], Subject: p[3], Author: p[4], When: p[5], Refs: p[6], Time: t})
 	}
 	return cs, nil
+}
+
+// Stats devolve o tamanho de cada commit (arquivos, linhas adicionadas e removidas), numa
+// chamada só ao git. Commits de merge contam contra o primeiro pai.
+func (r Repo) Stats(shas []string) (map[string]CommitStat, error) {
+	out := map[string]CommitStat{}
+	if len(shas) == 0 {
+		return out, nil
+	}
+	args := append([]string{"show", "--no-renames", "--first-parent", "-m", "--shortstat", "--format=%x1f%H"}, shas...)
+	text, err := r.git(args...)
+	if err != nil && text == "" {
+		return out, err
+	}
+	sha := ""
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(l, "\x1f"):
+			sha = strings.TrimPrefix(l, "\x1f")
+			if _, ok := out[sha]; !ok {
+				out[sha] = CommitStat{}
+			}
+		case sha != "" && strings.Contains(l, "changed"):
+			out[sha] = parseShortstat(l)
+		}
+	}
+	return out, nil
+}
+
+// " 3 files changed, 10 insertions(+), 2 deletions(-)"
+func parseShortstat(l string) CommitStat {
+	var s CommitStat
+	for _, part := range strings.Split(l, ",") {
+		f := strings.Fields(part)
+		if len(f) < 2 {
+			continue
+		}
+		n, _ := strconv.Atoi(f[0])
+		switch {
+		case strings.HasPrefix(f[1], "file"):
+			s.Files = n
+		case strings.HasPrefix(f[1], "insertion"):
+			s.Add = n
+		case strings.HasPrefix(f[1], "deletion"):
+			s.Del = n
+		}
+	}
+	return s
 }
 
 func (r Repo) Branch() string {
@@ -95,11 +151,12 @@ func (r Repo) HasHead() bool {
 // ---- Arquivos alterados ----
 
 type FileChange struct {
-	Path   string
-	Status string // M, A, D, R, ? (não rastreado)...
-	Add    int
-	Del    int
-	Binary bool
+	Path    string
+	OldPath string // nome anterior, nas renomeações e cópias
+	Status  string // M, A, D, R, ? (não rastreado)...
+	Add     int
+	Del     int
+	Binary  bool
 }
 
 // base devolve o par (de, para) a comparar para um commit, ou para as mudanças locais.
@@ -157,6 +214,9 @@ func (r Repo) Files(sha string) ([]FileChange, error) {
 			continue
 		}
 		fc := FileChange{Status: f[0][:1], Path: f[len(f)-1]}
+		if len(f) >= 3 {
+			fc.OldPath = f[1]
+		}
 		s := stats[fc.Path]
 		fc.Add, fc.Del, fc.Binary = s[0], s[1], s[2] == 1
 		fs = append(fs, fc)

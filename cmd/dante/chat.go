@@ -364,32 +364,29 @@ func (m *model) showOpenedByModel(call llm.ToolCall, result string) {
 		}
 		a.Path = b.Files[0].Path
 		m.selectFile(a.Path)
-		m.previewKey = "modelo"
-		m.setPreview(fmt.Sprintf("Documentos · %s (abertos pelo modelo)", plural(len(b.Files), "arquivo", "arquivos")), result, true)
+		m.setDoc(fmt.Sprintf("%s abertos pelo modelo", plural(len(b.Files), "arquivo", "arquivos")), result, false)
 		return
 	}
 	if a.Path == "" || (call.Name != "read_file" && call.Name != "git_diff") {
 		return
 	}
 	m.selectFile(a.Path)
-	m.previewKey = "modelo"
-	title := "Documento · " + a.Path
+	title := a.Path
 	if a.Ref != "" {
 		title += " @ " + shortSHA(a.Ref)
 	}
-	title += " (aberto pelo modelo)"
 	if call.Name == "git_diff" {
-		m.setPreview("Diff · "+a.Path+" (visto pelo modelo)", result, false)
+		m.setDoc("diff de "+a.Path+" visto pelo modelo", result, true)
 		return
 	}
-	m.setPreview(title, result, true)
+	m.setDoc(title, result, false)
 }
 
 func (m *model) selectFile(path string) {
 	for i, f := range m.files {
 		if f.Path == path {
 			m.fileIdx = i
-			m.fileOff = scrollTo(i, m.fileOff, m.filesRows())
+			m.fixFilesScroll()
 			return
 		}
 	}
@@ -488,6 +485,11 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		if m.diffPending != "" {
 			m.diffSent = m.diffPending
+		}
+		// Commit conversado conta como revisado no painel de commits.
+		if m.target != repo.WorkTree && m.reviewed != nil && !m.reviewed[m.target] {
+			m.reviewed[m.target] = true
+			saveReviewed(m.repo.Root, m.reviewed)
 		}
 	case msg.err == context.Canceled:
 		m.entries = append(m.entries, entry{kind: eNotice, text: "resposta cancelada"})

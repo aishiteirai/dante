@@ -256,30 +256,6 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "up", "k":
-		m.preview.ScrollUp(1)
-	case "down", "j":
-		m.preview.ScrollDown(1)
-	case "pgup", "ctrl+u", "K":
-		m.preview.HalfPageUp()
-	case "pgdown", "ctrl+d", " ", "J":
-		m.preview.HalfPageDown()
-	case "g", "home":
-		m.preview.GotoTop()
-	case "G", "end":
-		m.preview.GotoBottom()
-	case "esc":
-		return m.focusPane(pFiles)
-	case "enter":
-		return m.focusPane(pChat)
-	case "o", "e", "d", "r":
-		return m.updateFilesKeys(key) // mesmas ações do arquivo selecionado
-	}
-	return m, nil
-}
-
 // ---- mouse: clique dá foco, roda rola, arrastar a borda redimensiona ----
 
 type dragState struct {
@@ -364,7 +340,7 @@ func (m model) wheel(p paneID, dir int) (tea.Model, tea.Cmd) {
 	case pLog:
 		if i := m.nextSelectable(m.logIdx, dir); i >= 0 {
 			m.logIdx = i
-			m.logOff = scrollTo(i, m.logOff, m.logHeight())
+			m.fixLogScroll()
 			return m.selectTarget()
 		}
 	case pFiles:
