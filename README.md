@@ -303,6 +303,22 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
 
+### Commits e descrição do PR
+
+- **`/commits`** (ou `c` sobre "Mudanças locais" no Navegador): o dante junta, sem o modelo,
+  os arquivos alterados, o diff e os assuntos dos commits recentes (para seguir o estilo do
+  repositório), e pergunta como dividir tudo em commits, com mensagens no padrão Conventional
+  Commits e o porquê no corpo. O plano aparece numa janela: `enter` commita o selecionado, `a`
+  commita todos em ordem, `e` ajusta a mensagem no editor e `d` tira um commit do plano.
+  **O git só roda quando você aperta a tecla**, com o autor do seu `git config`, e só leva os
+  arquivos de cada commit (o que mais estiver no índice fica de fora). Nesta versão, a divisão
+  é por arquivo.
+- **`/pr`** (ou `c` sobre a linha **◆ branch × main**): a descrição do PR da branch, com
+  título, o que muda, por quê, como testar e riscos, a partir dos commits e do resumo dos
+  arquivos. Vai para a área de transferência e para `~/.local/share/dante/pedidos/pr.md`.
+
+As duas são perguntas avulsas e sem ferramentas: costumam ficar entre 1 e 5 mil tokens.
+
 ### O que faz esta função?
 
 Para entender uma função sem gastar uma conversa inteira:

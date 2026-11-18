@@ -229,3 +229,23 @@ func TestBranchComoPR(t *testing.T) {
 		t.Fatal("Tip")
 	}
 }
+
+func TestCommitFiles(t *testing.T) {
+	r := setup(t)
+	os.WriteFile(filepath.Join(r.Root, "a.txt"), []byte("a\n"), 0o644)
+	os.WriteFile(filepath.Join(r.Root, "b.txt"), []byte("b\n"), 0o644)
+	run(t, r.Root, "git", "add", "b.txt") // algo já no índice que não pode ir junto
+	if err := r.CommitFiles([]string{"a.txt"}, "feat: a", "porque sim"); err != nil {
+		t.Fatal(err)
+	}
+	if s := r.RecentSubjects(1); len(s) != 1 || s[0] != "feat: a" {
+		t.Fatalf("assunto = %v", s)
+	}
+	fs, _ := r.Files(r.Head())
+	if len(fs) != 1 || fs[0].Path != "a.txt" {
+		t.Fatalf("o commit deveria ter só a.txt: %+v", fs)
+	}
+	if wt, _ := r.Files(WorkTree); len(wt) != 1 || wt[0].Path != "b.txt" {
+		t.Fatalf("b.txt deveria continuar pendente: %+v", wt)
+	}
+}

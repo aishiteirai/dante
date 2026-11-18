@@ -158,23 +158,26 @@ func (m model) onFuncPack(msg funcPackMsg) (tea.Model, tea.Cmd) {
 	if msg.pasted {
 		label = fmt.Sprintf("o que faz `%s`? (código colado)", fi.Name)
 	}
-	return m.askIsolated(label, m.funcPrompt(msg))
+	return m.askIsolated(funcSystemPrompt, label, m.funcPrompt(msg), "")
 }
 
 // askIsolated faz uma pergunta numa conversa à parte (sem ferramentas e sem o histórico):
 // a resposta aparece no chat, mas não entra na conversa principal.
-func (m model) askIsolated(label, prompt string) (tea.Model, tea.Cmd) {
+//
+// purpose diz o que fazer com a resposta quando ela terminar ("commits": ler o plano; "pr":
+// copiar a descrição; "": nada).
+func (m model) askIsolated(system, label, prompt, purpose string) (tea.Model, tea.Cmd) {
 	effort := ""
 	if m.prov.Tipo == llm.KindAnthropic {
 		effort = "low"
 	}
-	chat, err := llm.New(m.prov.LLM(), llm.Options{Model: m.modelName, System: funcSystemPrompt, Effort: effort,
+	chat, err := llm.New(m.prov.LLM(), llm.Options{Model: m.modelName, System: system, Effort: effort,
 		ContextTokens: m.effectiveContext(), MaxSteps: 1})
 	if err != nil {
 		m.setErr(err.Error())
 		return m, nil
 	}
-	m.isolated = true
+	m.isolated, m.purpose = true, purpose
 	m.entries = append(m.entries, entry{kind: eUser, text: label})
 	m.streaming, m.thinking = true, false
 	m.status = ""

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/aishiteirai/dante/internal/repo"
 	"sort"
 	"strings"
 
@@ -237,6 +238,9 @@ func (m model) viewMain() string {
 	if m.mode == modeMap {
 		screen = overlay(screen, m.mapPopup(), m.width)
 	}
+	if m.mode == modeCommits && m.plan != nil {
+		screen = overlay(screen, m.commitsPopup(), m.width)
+	}
 	return strings.Join(screen, "\n")
 }
 
@@ -370,8 +374,14 @@ func (m model) helpLine() string {
 		if m.navFile {
 			return base + "↑↓ arquivo · ← volta ao commit · enter foca o diff · r revisa o arquivo · o editor · tab chat"
 		}
+		extra := ""
+		if m.target == repo.WorkTree {
+			extra = "c planeja os commits · "
+		} else if _, _, ok := repo.SplitRange(m.target); ok {
+			extra = "c descrição do PR · "
+		}
 		if m.navOpen {
-			return base + "↑↓ anda · ← fecha os arquivos · r revisa o commit · tab chat · q sair"
+			return base + "↑↓ anda · ← fecha os arquivos · r revisa · " + extra + "tab chat · q sair"
 		}
 		return base + "↑↓ commit · → abre os arquivos · r revisa o commit · tab chat · q sair"
 	case pDiff:

@@ -37,6 +37,8 @@ var chatCommands = []chatCommand{
 	{"/ler", "o modelo só lê e sugere (padrão)"},
 	{"/editar", "o modelo pode alterar arquivos, com a sua aprovação"},
 	{"/permissoes", "o que o modelo pode fazer no modo editar"},
+	{"/commits", "planeja como dividir as mudanças locais em commits (você confirma cada um)"},
+	{"/pr", "escreve a descrição do PR da branch atual"},
 	{"/corrigir", "copia um pedido de correção dos achados, para colar no Claude"},
 	{"/funcao", "explica uma função (pelo nome ou colada) numa pergunta barata"},
 	{"/mapa", "gera o mapa do projeto com um modelo barato (mostra o custo antes)"},
