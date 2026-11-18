@@ -379,6 +379,11 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		return m.explainFuncText(arg)
 	}
+	if f := fold(text); f == "/corrigir" || f == "/pedido" {
+		m.input.Reset()
+		m.copyFixRequest(m.allFindings())
+		return m, nil
+	}
 	if !strings.HasPrefix(text, "/") && asksAboutPastedFunc(text) {
 		return m.explainFuncText(text)
 	}
