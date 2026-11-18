@@ -69,3 +69,28 @@ func TestCartaoNoChat(t *testing.T) {
 		t.Fatal("markdown da conversa salva")
 	}
 }
+
+func TestLeiturasAgrupadas(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	m := newModel(config.Defaults(), "", "")
+	m.chatView.Width, m.chatView.Height = 80, 30
+	m.modelName = "m"
+	m.entries = []entry{
+		{kind: eUser, text: "revise"},
+		{kind: eTool, text: "abriu a.go", done: true, ok: true},
+		{kind: eTool, text: "abriu b.go", done: true, ok: true},
+		{kind: eTool, text: "buscou \"x\"", done: true, ok: false},
+		{kind: eAssistant, text: "pronto"},
+	}
+	m.refreshChat()
+	out := ansi.Strip(m.chatView.View())
+	if !strings.Contains(out, "✗ 3 leituras (1 com erro): abriu a.go · abriu b.go · buscou") || strings.Count(out, "abriu a.go") != 1 {
+		t.Fatalf("agrupado:\n%s", out)
+	}
+	m.showActivity = true
+	m.refreshChat()
+	out = ansi.Strip(m.chatView.View())
+	if strings.Contains(out, "3 leituras") || !strings.Contains(out, "✓ abriu b.go") {
+		t.Fatalf("detalhado:\n%s", out)
+	}
+}

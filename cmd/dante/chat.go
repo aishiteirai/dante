@@ -589,6 +589,32 @@ var (
 	darkBg      = true
 )
 
+// activityLine resume uma sequência de ações do modelo numa linha.
+func (m model) activityLine(run []entry, w int) string {
+	pending, failed := 0, 0
+	var texts []string
+	for _, e := range run {
+		texts = append(texts, e.text)
+		if !e.done {
+			pending++
+		} else if !e.ok {
+			failed++
+		}
+	}
+	if pending > 0 {
+		return m.spin.View() + " " + subtleStyle.Render(truncateW(run[len(run)-1].text+"…", w-2))
+	}
+	mark := okStyle.Render("✓")
+	if failed > 0 {
+		mark = errStyle.Render("✗")
+	}
+	label := plural(len(run), "leitura", "leituras")
+	if failed > 0 {
+		label += fmt.Sprintf(" (%d com erro)", failed)
+	}
+	return mark + " " + subtleStyle.Render(truncateW(label+": "+strings.Join(texts, " · "), w-2))
+}
+
 // followedByFinding: depois desta resposta (pulando as leituras) vem um cartão de achado.
 func (m model) followedByFinding(i int) bool {
 	for j := i + 1; j < len(m.entries); j++ {
@@ -631,8 +657,22 @@ func (m *model) refreshChat() {
 		parts = append(parts, m.chatWelcome(w))
 	}
 	last := len(m.entries) - 1
+	skip := -1
 	for i := range m.entries {
+		if i <= skip {
+			continue
+		}
 		e := &m.entries[i]
+		// Leituras seguidas do modelo viram uma linha só (ctrl+o mostra uma por linha).
+		if e.kind == eTool && !m.showActivity {
+			end := i
+			for end+1 < len(m.entries) && m.entries[end+1].kind == eTool {
+				end++
+			}
+			parts = append(parts, "  "+m.activityLine(m.entries[i:end+1], w-2))
+			skip = end
+			continue
+		}
 		switch e.kind {
 		case eUser:
 			parts = append(parts, "", selectedStyle.Render("você")+"\n"+lipgloss.NewStyle().Width(w).Render(e.text))

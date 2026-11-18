@@ -204,6 +204,11 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateRefKeys(key)
 	}
 
+	if key == "ctrl+o" { // detalhes das leituras do modelo no chat
+		m.showActivity = !m.showActivity
+		m.refreshChat()
+		return m, nil
+	}
 	if key == "ctrl+g" { // referências do chat, de qualquer painel
 		m.mode = modeRefs
 		m.refIdx = max(len(m.refs)-1, 0)

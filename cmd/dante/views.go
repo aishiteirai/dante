@@ -369,7 +369,7 @@ func (m model) helpLine() string {
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"
 		}
-		return base + "enter envia · / comandos · ctrl+g referências · ctrl+n nova conversa"
+		return base + "enter envia · / comandos · ctrl+g referências · ctrl+o leituras · ctrl+n nova conversa"
 	}
 	return base
 }
