@@ -118,6 +118,9 @@ type Config struct {
 	// Orçamento de tokens (entrada + saída de todas as rodadas) de cada pergunta ao modelo.
 	// 0 usa o padrão (DefaultTurnBudget); -1 desliga o limite.
 	OrcamentoTokens int `json:"orcamento_tokens,omitempty"`
+	// O que o agente pode fazer no modo editar, por ação ("editar", "criar", "apagar"):
+	// "perguntar", "permitir" ou "negar". Faltando, valem os padrões de DefaultPermissions.
+	Permissoes map[string]string `json:"permissoes,omitempty"`
 	// Provedores padrão que este config já conhece; os novos são acrescentados ao carregar.
 	PadroesConhecidos []string `json:"padroes_conhecidos,omitempty"`
 }
@@ -336,4 +339,37 @@ func (c *Config) Trust(root string) {
 	if !c.Trusted(root) {
 		c.Confiados = append(c.Confiados, root)
 	}
+}
+
+// Valores de permissão de escrita do agente.
+const (
+	PermAsk   = "perguntar"
+	PermAllow = "permitir"
+	PermDeny  = "negar"
+)
+
+// PermissionOps são as ações de escrita, na ordem em que aparecem na interface.
+var PermissionOps = []string{"editar", "criar", "apagar"}
+
+// DefaultPermissions: editar e criar pedem aprovação; apagar é negado.
+var DefaultPermissions = map[string]string{"editar": PermAsk, "criar": PermAsk, "apagar": PermDeny}
+
+// Permission devolve a permissão de uma ação de escrita.
+func (c Config) Permission(op string) string {
+	switch v := c.Permissoes[op]; v {
+	case PermAsk, PermAllow, PermDeny:
+		return v
+	}
+	if v, ok := DefaultPermissions[op]; ok {
+		return v
+	}
+	return PermDeny
+}
+
+// SetPermission muda a permissão de uma ação.
+func (c *Config) SetPermission(op, v string) {
+	if c.Permissoes == nil {
+		c.Permissoes = map[string]string{}
+	}
+	c.Permissoes[op] = v
 }
