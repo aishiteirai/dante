@@ -155,3 +155,29 @@ func TestSafePathComAsDuasBarras(t *testing.T) {
 		}
 	}
 }
+
+func TestStatsEMetadados(t *testing.T) {
+	r := setup(t)
+	log, _ := r.Log(10)
+	if log[0].Time == 0 {
+		t.Fatal("o commit deveria trazer a data")
+	}
+	st, err := r.Stats([]string{log[0].SHA, log[1].SHA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// O segundo commit renomeia a.py para b.py e muda 2 linhas (sem renomeação detectada: --no-renames).
+	if s := st[log[1].SHA]; s.Files != 1 || s.Add != 6 || s.Del != 0 {
+		t.Fatalf("commit raiz = %+v", s)
+	}
+	if s := st[log[0].SHA]; s.Files != 2 {
+		t.Fatalf("commit de renomeação = %+v", s)
+	}
+	fs, _ := r.Files(log[0].SHA)
+	if fs[0].Status != "R" || fs[0].OldPath != "a.py" || fs[0].Path != "b.py" {
+		t.Fatalf("renomeação = %+v", fs[0])
+	}
+	if s := parseShortstat(" 3 files changed, 10 insertions(+), 2 deletions(-)"); s != (CommitStat{3, 10, 2}) {
+		t.Fatalf("parseShortstat = %+v", s)
+	}
+}
