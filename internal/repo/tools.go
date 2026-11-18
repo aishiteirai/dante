@@ -142,7 +142,8 @@ func (r Repo) Executor(target func() string) llm.Executor {
 			if err != nil && out == "" && !strings.Contains(err.Error(), "fatal") {
 				out, err = "(nenhum resultado)", nil
 			}
-			out = r.filterGrep(out)
+			out = capLines(r.filterGrep(out), maxGrepLines,
+				"refine o padrão ou limite com path para ver os outros")
 		case "list_files":
 			args := []string{"ls-files"}
 			if a.Path != "" {
@@ -327,6 +328,18 @@ func (r Repo) readFile(a toolArgs) (string, error) {
 		fmt.Fprintf(&b, "%5d  %s\n", i, lines[i-1])
 	}
 	return b.String() + note, nil
+}
+
+// maxGrepLines: resultados do grep devolvidos ao modelo; o resto vira uma contagem.
+const maxGrepLines = 40
+
+// capLines corta a saída em n linhas, dizendo quantas ficaram de fora.
+func capLines(s string, n int, hint string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n") + fmt.Sprintf("\n… e mais %d resultados (%s)", len(lines)-n, hint)
 }
 
 func truncate(s string) string {

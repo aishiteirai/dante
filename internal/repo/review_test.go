@@ -90,3 +90,43 @@ func TestEsqueleto(t *testing.T) {
 		t.Fatal("inteiro=true deveria ler tudo")
 	}
 }
+
+func TestEspacosEQuemChama(t *testing.T) {
+	r := setup(t)
+	write := func(p, c string) { os.WriteFile(filepath.Join(r.Root, p), []byte(c), 0o644) }
+	write("calc.go", "package x\n\nfunc Somar(a, b int) int {\n\treturn a - b\n}\n")
+	write("uso.go", "package x\n\nfunc usar() int { return Somar(1, 2) }\n\nvar total = Somar(3, 4)\n")
+	write("fmt.go", "package x\n\nvar y = 1\n")
+	write("conf.yaml", "a:\n  b: 1\n")
+	run(t, r.Root, "git", "add", ".")
+	run(t, r.Root, "git", "commit", "-qm", "base")
+	write("calc.go", "package x\n\nfunc Somar(a, b int) int {\n\treturn a + b\n}\n")
+	write("fmt.go", "package x\n\nvar  y = 1   \n")
+	write("conf.yaml", "a:\n    b: 1\n")
+	p, err := r.ReviewDiff(WorkTree, 100000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	why := map[string]string{}
+	for _, l := range p.Left {
+		why[l.Path] = l.Why
+	}
+	if why["fmt.go"] != "só espaços ou indentação" || why["conf.yaml"] != "" {
+		t.Fatalf("só espaços: %v (yaml muda de sentido com a indentação)", why)
+	}
+	if len(p.Callers) != 1 || p.Callers[0].Name != "Somar" || strings.Join(p.Callers[0].Sites, ",") != "uso.go:3,uso.go:5" {
+		t.Fatalf("quem chama: %+v", p.Callers)
+	}
+	// O grep devolve no máximo maxGrepLines resultados.
+	var b strings.Builder
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&b, "achar%d\n", i)
+	}
+	write("muitos.txt", b.String())
+	run(t, r.Root, "git", "add", "muitos.txt")
+	exec := r.Executor(func() string { return WorkTree })
+	out, _ := exec(context.Background(), llm.ToolCall{Name: "grep", Args: `{"pattern":"achar"}`})
+	if strings.Count(out, "\n") > maxGrepLines+1 || !strings.Contains(out, "e mais 60 resultados") {
+		t.Fatalf("grep sem limite: %d linhas", strings.Count(out, "\n"))
+	}
+}
