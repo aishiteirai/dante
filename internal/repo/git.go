@@ -160,7 +160,15 @@ type FileChange struct {
 }
 
 // base devolve o par (de, para) a comparar para um commit, ou para as mudanças locais.
+// Num intervalo "base...branch", compara a branch com o ponto em que ela saiu da base,
+// como um PR.
 func (r Repo) base(sha string) (from, to string) {
+	if b, tip, ok := SplitRange(sha); ok {
+		if mb, err := r.git("merge-base", b, tip); err == nil {
+			return strings.TrimSpace(mb), tip
+		}
+		return b, tip
+	}
 	if sha == WorkTree {
 		if r.HasHead() {
 			return "HEAD", ""
@@ -275,6 +283,9 @@ func (r Repo) DiffContext(sha, path string, lines int) (string, error) {
 
 // Mensagem completa de um commit.
 func (r Repo) CommitMessage(sha string) string {
+	if _, _, ok := SplitRange(sha); ok {
+		return ""
+	}
 	out, _ := r.git("log", "-1", "--format=%an <%ae>, %ad%n%n%B", sha)
 	return strings.TrimSpace(out)
 }
@@ -307,6 +318,59 @@ func (r Repo) MergedSubjects(sha string, n int) []string {
 		return nil
 	}
 	out, err := r.git("log", "--no-merges", fmt.Sprintf("-%d", n), "--format=%h %s", sha+"^1.."+sha+"^2")
+	if err != nil {
+		return nil
+	}
+	var subs []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if l != "" {
+			subs = append(subs, l)
+		}
+	}
+	return subs
+}
+
+// ---- branch como um PR ----
+
+// Range é o alvo "base...branch": todos os commits da branch desde que ela saiu da base.
+func Range(base, branch string) string { return base + "..." + branch }
+
+// SplitRange separa um alvo "base...branch".
+func SplitRange(t string) (base, tip string, ok bool) {
+	base, tip, ok = strings.Cut(t, "...")
+	return base, tip, ok && base != "" && tip != ""
+}
+
+// Tip é a versão dos arquivos de um alvo: a ponta da branch num intervalo, o próprio commit
+// ou o disco (WorkTree).
+func Tip(t string) string {
+	if _, tip, ok := SplitRange(t); ok {
+		return tip
+	}
+	return t
+}
+
+// BaseBranch acha a branch principal do repositório: a do origin/HEAD, ou main/master.
+func (r Repo) BaseBranch() string {
+	if out, err := r.git("symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"); err == nil && strings.TrimSpace(out) != "" {
+		return strings.TrimSpace(out)
+	}
+	for _, b := range []string{"main", "master", "origin/main", "origin/master"} {
+		if _, err := r.git("rev-parse", "--verify", "-q", b); err == nil {
+			return b
+		}
+	}
+	return ""
+}
+
+// RangeCommits devolve os commits de um intervalo (hash curto e assunto), do mais novo ao mais
+// antigo, sem merges.
+func (r Repo) RangeCommits(t string, n int) []string {
+	b, tip, ok := SplitRange(t)
+	if !ok {
+		return nil
+	}
+	out, err := r.git("log", "--no-merges", fmt.Sprintf("-%d", n), "--format=%h %s", b+".."+tip)
 	if err != nil {
 		return nil
 	}

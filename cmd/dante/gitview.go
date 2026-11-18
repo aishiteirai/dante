@@ -121,6 +121,13 @@ func (m model) logLines(w int) []logLine {
 		if sel {
 			mark = selectedStyle.Render("●")
 		}
+		if r.rng != "" {
+			base, tip, _ := repo.SplitRange(r.rng)
+			l1 := selectedStyle.Render("◆ ") + boldStyle.Render(tip) + subtleStyle.Render(" × "+base)
+			l2 := "  " + subtleStyle.Render(plural(r.ahead, "commit à frente", "commits à frente")+" · revisar como um PR")
+			out = append(out, m.logRow(i, l1, w, sel), m.logRow(i, l2, w, sel))
+			continue
+		}
 		if r.worktree {
 			l1 := warnStyle.Render("● ") + boldStyle.Render("Mudanças locais")
 			l2 := "  " + subtleStyle.Render(plural(m.dirty, "arquivo alterado", "arquivos alterados"))

@@ -137,7 +137,7 @@ func (m model) openRef(n int) (tea.Model, tea.Cmd) {
 	exec := m.repo.Executor(func() string { return m.target })
 	args := map[string]any{"path": r.path, "inteiro": true}
 	if m.target != repo.WorkTree {
-		args["ref"] = m.target
+		args["ref"] = repo.Tip(m.target)
 	}
 	b, _ := json.Marshal(args)
 	title := fmt.Sprintf("%s:%d · referência [%d]", r.path, r.line, n)

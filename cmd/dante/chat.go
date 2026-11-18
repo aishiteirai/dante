@@ -173,7 +173,15 @@ func (m model) contextBlock() string {
 	if m.branch != "" {
 		fmt.Fprintf(&b, "Branch atual: %s\n", m.branch)
 	}
-	if m.target == repo.WorkTree {
+	if base, tip, ok := repo.SplitRange(m.target); ok {
+		subs := m.repo.RangeCommits(m.target, 30)
+		fmt.Fprintf(&b, "Alvo: a branch %s inteira, comparada com %s desde que saiu dela, como um PR (%s):\n",
+			tip, base, plural(len(subs), "commit", "commits"))
+		for _, l := range subs {
+			b.WriteString("  " + l + "\n")
+		}
+		fmt.Fprintf(&b, "Para ler os arquivos como estão na branch, use read_file com ref=%s.\n", tip)
+	} else if m.target == repo.WorkTree {
 		b.WriteString("Alvo: mudanças locais não commitadas (working tree comparado com HEAD; arquivos com status ? ainda não estão no git)\n")
 	} else {
 		msg := m.repo.CommitMessage(m.target)
