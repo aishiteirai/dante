@@ -265,6 +265,30 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
 
+### Mapa do projeto e tour
+
+`/mapa` gera um mapa do projeto, só quando você pede. Antes, o dante mostra quantos arquivos
+vai ler, a estimativa de tokens e a lista de modelos. Escolha um modelo barato, como o
+Haiku, o `deepseek-chat` ou um modelo local do Ollama (grátis, mais lento). O último modelo
+escolhido fica lembrado.
+
+- Cada pasta é resumida à parte: o papel dela, uma linha por arquivo com `arquivo:linha` e
+  com o que ela se liga. No fim vêm a visão geral, por onde começar, o fluxo principal e um
+  glossário.
+- Arquivos sensíveis, binários, muito grandes e de trava (`go.sum`, `package-lock.json`…)
+  ficam de fora, e valores com cara de segredo são mascarados.
+- O mapa fica salvo em `~/.local/share/dante/mapas/`. Rodar `/mapa` de novo resume só as
+  pastas que mudaram; se nada mudou, ele só abre o mapa.
+- Uma versão compacta do mapa (~1 a 4 mil tokens) vai como contexto no começo de cada
+  conversa nova, para o modelo se orientar sem reabrir tudo.
+
+`/tour` abre a aba **Mapa** do Visualizador no primeiro capítulo: visão geral, por onde
+começar, uma pasta por capítulo, o fluxo principal e o glossário. `←`/`→` trocam de
+capítulo, `[`/`]` trocam de aba, e cada `arquivo:linha` vira uma referência `[n]` que
+`ctrl+g` abre. Combina com `/explicar /aprendiz` para perguntar sobre o que leu.
+
+O modelo barato de cada provedor fica em `modelo_mapa` no `config.json`.
+
 ### O que o modelo pode fazer
 
 O agente tem dois modos, e o atual aparece no título do chat:
@@ -376,7 +400,6 @@ junto com as instruções do modelo. Há um modelo em `exemplos/diretrizes.md`.
 - Addon do noct: o dante continua independente, mas também poderá rodar como mod do noct
   (veja `CLAUDE.md`).
 - Editar arquivos dentro do dante e salvar.
-- `/mapa` e `/tour`: um mapa do projeto, gerado sob demanda por um modelo barato.
 
 ## CLI `revisor` (opcional)
 

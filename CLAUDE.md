@@ -20,6 +20,8 @@ com ferramentas de leitura e opina sobre as mudanças.
   ferramentas; validação de chave; download de modelos do Ollama.
 - `internal/repo/` git (log com grafo, arquivos, diffs) e ferramentas de leitura do modelo,
   presas à pasta do repositório.
+- `internal/mapa/` mapa do projeto (/mapa): varredura, resumo por pasta com um modelo
+  barato, visão geral, salvamento incremental por hash de pasta. Sem dependência da interface.
 - `internal/config/` provedores, último modelo, repositórios confiados; chaves em
   `credenciais.json` (0600).
 
@@ -49,9 +51,10 @@ Implicações para o desenho do dante:
 ### Próximos passos já combinados
 
 - Editar arquivos dentro do dante e salvar.
-- `/mapa` sob demanda (modelo barato, salvo por repositório) e `/tour`, numa aba Mapa do
-  Visualizador.
 
 Feito: agente ler/editar (`cmd/dante/agent.go`, `internal/repo/write.go`). As ferramentas
 de escrita vão em toda conversa, porque a lista não pode mudar no meio dela (o Claude trata
 isso como edição do histórico); no modo ler, elas recusam.
+
+Feito: `/mapa` e `/tour` (`internal/mapa/`, `cmd/dante/mapview.go`). O mapa compacto vai no
+prompt de sistema, então só vale a partir da conversa seguinte à geração.
