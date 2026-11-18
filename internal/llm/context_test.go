@@ -173,12 +173,13 @@ func TestOrcamentoPorPergunta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Rodadas 1 e 2 executam (gasto 1000, 2000); na 3ª (3000) o modelo recebe o aviso;
-	// na 4ª ele insiste e o laço para.
-	if executadas != 2 || len(bodies) != 4 || u.InputTokens+u.OutputTokens != 4000 {
-		t.Fatalf("executadas=%d requisições=%d gasto=%d", executadas, len(bodies), u.InputTokens+u.OutputTokens)
+	// O orçamento é conferido antes da rodada: a rodada 1 executa (gasto 1000 + próxima
+	// entrada ~900 < 2500); na 2ª (2000 + 900 ≥ 2500) o modelo recebe o aviso; na 3ª ele
+	// insiste e o laço para.
+	if executadas != 1 || len(bodies) != 3 || u.InputTokens+u.OutputTokens != 3000 || u.Rounds != 3 {
+		t.Fatalf("executadas=%d requisições=%d gasto=%d rodadas=%d", executadas, len(bodies), u.InputTokens+u.OutputTokens, u.Rounds)
 	}
-	msgs := bodies[3]["messages"].([]any)
+	msgs := bodies[2]["messages"].([]any)
 	if last := msgs[len(msgs)-1].(map[string]any); !strings.Contains(last["content"].(string), "Orçamento de tokens desta pergunta esgotado") {
 		t.Fatalf("o modelo deveria receber o aviso: %v", last)
 	}
@@ -194,5 +195,72 @@ func TestOrcamentoPorPergunta(t *testing.T) {
 	// O histórico continua válido: a próxima pergunta funciona.
 	if _, err := chat.Send(context.Background(), "e agora?", func(Event) {}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLimiteDeRodadasDeLeitura(t *testing.T) {
+	// A cada requisição, o modelo pede uma leitura e um registrar_achado (livre).
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		w.Header().Set("Content-Type", "text/event-stream")
+		if n > 3 {
+			fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"fim"},"finish_reason":"stop"}]}`)
+		} else {
+			fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"read_file","arguments":"{}"}},{"index":1,"id":"b","function":{"name":"registrar_achado","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+		}
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10,"prompt_tokens_details":{"cached_tokens":60}}}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	ran := map[string]int{}
+	exec := func(_ context.Context, c ToolCall) (string, bool) { ran[c.Name]++; return "ok", false }
+	chat, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m", Tools: []Tool{readTool}, Exec: exec})
+	ctx := WithLimits(context.Background(), Limits{ReadRounds: 1, Free: []string{"registrar_achado"}})
+	u, err := chat.Send(ctx, "revise", func(Event) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Só 1 rodada de leitura; os achados (livres) rodam em todas as rodadas.
+	if ran["read_file"] != 1 || ran["registrar_achado"] != 3 {
+		t.Fatalf("executadas: %v", ran)
+	}
+	if u.CachedTokens != 180 || u.Rounds != 3 { // insistiu na leitura depois do aviso: parou na 3ª
+		t.Fatalf("uso: %+v", u)
+	}
+}
+
+func TestRodadaFinalEncerraAResposta(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(b, &body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"Resumo.","tool_calls":[{"index":0,"id":"f1","function":{"name":"registrar_achado","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	exec := func(context.Context, ToolCall) (string, bool) { return "registrado", false }
+	chat, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m", Tools: []Tool{readTool}, Exec: exec})
+	ctx := WithLimits(context.Background(), Limits{Final: []string{"registrar_achado"}})
+	if _, err := chat.Send(ctx, "revise", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("uma rodada só com achados deveria encerrar: %d requisições", len(bodies))
+	}
+	// A próxima pergunta leva os resultados pendentes antes dela.
+	if _, err := chat.Send(ctx, "e agora?", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := bodies[1]["messages"].([]any)
+	roles := []string{}
+	for _, m := range msgs {
+		roles = append(roles, m.(map[string]any)["role"].(string))
+	}
+	if strings.Join(roles, ",") != "user,assistant,tool,user" {
+		t.Fatalf("histórico = %v", roles)
 	}
 }

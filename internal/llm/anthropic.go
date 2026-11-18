@@ -91,13 +91,26 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 	var usage Usage
 	// Histórico só cresce no fim: em caso de erro, desfaz esta mensagem inteira.
 	start := len(c.messages)
-	c.messages = append(c.messages, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(user)))
+	// A resposta anterior pode ter terminado numa rodada de ferramentas finais (os
+	// resultados ainda não foram enviados): a pergunta vai na mesma mensagem, depois deles.
+	pending := -1
+	if n := len(c.messages); n > 0 && c.messages[n-1].OfUser != nil {
+		u := c.messages[n-1].OfUser
+		pending = len(u.Content)
+		u.Content = append(u.Content, anthropic.NewBetaTextBlock(user))
+	} else {
+		c.messages = append(c.messages, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(user)))
+	}
 	fail := func(err error) (Usage, error) {
 		c.messages = c.messages[:start]
+		if pending >= 0 {
+			u := c.messages[start-1].OfUser
+			u.Content = u.Content[:pending]
+		}
 		return usage, err
 	}
 
-	guard := newGuard(c.opts.TurnBudget)
+	guard := newGuard(ctx, c.opts.TurnBudget)
 	for step := 0; step < c.opts.MaxSteps; step++ {
 		stream := c.client.Beta.Messages.NewStreaming(ctx, c.params())
 		msg := anthropic.BetaMessage{}
@@ -115,9 +128,10 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 		if err := stream.Err(); err != nil {
 			return fail(anthropicError(err))
 		}
-		usage.InputTokens += msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens
-		usage.OutputTokens += msg.Usage.OutputTokens
-		guard.add(Usage{InputTokens: msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens, OutputTokens: msg.Usage.OutputTokens})
+		u := Usage{InputTokens: msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens,
+			OutputTokens: msg.Usage.OutputTokens, CachedTokens: msg.Usage.CacheReadInputTokens, Rounds: 1}
+		usage.Add(u)
+		guard.add(u)
 		c.messages = append(c.messages, msg.ToParam())
 
 		switch msg.StopReason {
@@ -132,7 +146,13 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 			return usage, nil
 		}
 
-		run, stop := guard.check(emit)
+		var names []string
+		for _, b := range msg.Content {
+			if tu, ok := b.AsAny().(anthropic.BetaToolUseBlock); ok {
+				names = append(names, tu.Name)
+			}
+		}
+		v := guard.check(names, emit)
 		var results []anthropic.BetaContentBlockParamUnion
 		for _, b := range msg.Content {
 			tu, ok := b.AsAny().(anthropic.BetaToolUseBlock)
@@ -140,8 +160,8 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 				continue
 			}
 			call := ToolCall{ID: tu.ID, Name: tu.Name, Args: tu.JSON.Input.Raw()}
-			if !run { // todo tool_use precisa de um tool_result, mesmo sem executar
-				results = append(results, anthropic.NewBetaToolResultBlock(tu.ID, budgetResult, true))
+			if v.blocked(guard, call.Name) { // todo tool_use precisa de um tool_result, mesmo sem executar
+				results = append(results, anthropic.NewBetaToolResultBlock(tu.ID, v.block, true))
 				continue
 			}
 			emit(Event{Kind: EvToolCall, Call: call})
@@ -153,7 +173,7 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 			return fail(ctx.Err())
 		}
 		c.messages = append(c.messages, anthropic.NewBetaUserMessage(results...))
-		if stop {
+		if v.stop || guard.final(names) {
 			return usage, nil
 		}
 	}

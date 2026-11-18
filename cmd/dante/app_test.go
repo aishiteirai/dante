@@ -284,11 +284,11 @@ func TestDiffNaMensagem(t *testing.T) {
 	if file := m.diffBlock("a.py"); file != "" {
 		t.Fatal("o diff do alvo inteiro já cobre o arquivo")
 	}
-	// Diff grande vira só um aviso.
+	// Diff grande: os arquivos vão para a lista do que ficou de fora.
 	m.resetChat()
 	m.prov.Contexto = 20 // ~15 bytes de limite
-	if big := m.diffBlock(""); !strings.Contains(big, "grande demais") || strings.Contains(big, "+x = 2") {
-		t.Fatalf("diff grande deveria virar aviso:\n%s", big)
+	if big := m.diffBlock(""); !strings.Contains(big, "a.py (+1 −1, não coube aqui)") || strings.Contains(big, "+x = 2") {
+		t.Fatalf("diff grande deveria virar lista:\n%s", big)
 	}
 	// Pedido de um arquivo só leva o diff dele.
 	m.resetChat()

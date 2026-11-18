@@ -17,9 +17,10 @@ const (
 	maxOutputSize = 60_000
 	maxBatchFiles = 20
 
-	// DiffContextLines é o contexto padrão dos diffs enviados ao modelo: o bastante para
-	// entender a mudança sem abrir o arquivo inteiro.
-	DiffContextLines = 10
+	// DiffContextLines é o contexto padrão dos diffs enviados ao modelo. Com 3 linhas o
+	// diff fica ~30% menor que com 10, e o cabeçalho de cada trecho já diz a função; o
+	// modelo pede mais contexto (context_lines) ou o trecho do arquivo quando precisar.
+	DiffContextLines = 3
 	maxDiffContext   = 40
 )
 
@@ -33,54 +34,35 @@ func Tools() []llm.Tool {
 		}
 		return map[string]any{"type": "object", "properties": props, "required": req}
 	}
+	file := map[string]any{
+		"path":       str("Caminho a partir da raiz."),
+		"ref":        str("Commit a ler (vazio = disco)."),
+		"start_line": integer("Primeira linha."),
+		"end_line":   integer("Última linha."),
+	}
 	return []llm.Tool{
-		{Name: "read_file", Description: "Abre um arquivo do repositório e devolve o conteúdo com números de linha. " +
-			"Sem `ref`, lê a versão atual no disco; com `ref` (SHA de commit), lê a versão daquele commit.",
+		{Name: "read_file", Description: fmt.Sprintf("Lê um arquivo, com números de linha. Arquivo com mais de %d linhas, "+
+			"sem start_line/end_line, volta como esqueleto (declarações e linhas): depois peça o trecho.", OutlineLines),
+			Params: obj(map[string]any{"path": file["path"], "ref": file["ref"], "start_line": file["start_line"],
+				"end_line": file["end_line"], "inteiro": map[string]any{"type": "boolean", "description": "Lê tudo mesmo se grande (caro)."}}, "path")},
+		{Name: "read_files", Description: fmt.Sprintf("Lê até %d arquivos ou trechos numa chamada. Prefira a várias read_file: "+
+			"cada rodada reenvia a conversa inteira.", maxBatchFiles),
+			Params: obj(map[string]any{"files": map[string]any{"type": "array", "items": obj(file, "path")}}, "files")},
+		{Name: "git_diff", Description: fmt.Sprintf("Diff do alvo (ou de `ref`), opcionalmente de um arquivo. Contexto padrão: %d linhas.", DiffContextLines),
 			Params: obj(map[string]any{
-				"path":       str("Caminho relativo à raiz do repositório."),
-				"ref":        str("Opcional: commit cuja versão deve ser lida."),
-				"start_line": integer("Opcional: primeira linha (1 = início)."),
-				"end_line":   integer("Opcional: última linha."),
-			}, "path")},
-		{Name: "read_files", Description: "Abre vários arquivos (ou trechos deles) numa chamada só. Prefira esta " +
-			"ferramenta a várias chamadas de read_file: cada rodada reenvia a conversa inteira ao modelo.",
-			Params: obj(map[string]any{
-				"files": map[string]any{
-					"type":        "array",
-					"description": fmt.Sprintf("Até %d arquivos. Para arquivos grandes, peça só o trecho necessário.", maxBatchFiles),
-					"items": obj(map[string]any{
-						"path":       str("Caminho relativo à raiz do repositório."),
-						"ref":        str("Opcional: commit cuja versão deve ser lida."),
-						"start_line": integer("Opcional: primeira linha."),
-						"end_line":   integer("Opcional: última linha."),
-					}, "path"),
-				},
-			}, "files")},
-		{Name: "git_diff", Description: "Diff do alvo em revisão (commit ou mudanças locais), com linhas de contexto " +
-			"ao redor de cada mudança. Use `path` para um arquivo só.",
-			Params: obj(map[string]any{
-				"ref":           str("Opcional: SHA do commit; vazio = alvo atual da conversa."),
-				"path":          str("Opcional: arquivo."),
-				"context_lines": integer(fmt.Sprintf("Opcional: linhas de contexto (padrão %d, máximo %d).", DiffContextLines, maxDiffContext)),
+				"ref":           str("Commit (vazio = alvo da conversa)."),
+				"path":          str("Arquivo."),
+				"context_lines": integer(fmt.Sprintf("Linhas de contexto (até %d).", maxDiffContext)),
 			})},
-		{Name: "grep", Description: "Busca um padrão (regex estendida do git grep) nos arquivos versionados. Devolve arquivo:linha:texto.",
-			Params: obj(map[string]any{
-				"pattern": str("Expressão a buscar."),
-				"path":    str("Opcional: limita a um diretório ou arquivo."),
-			}, "pattern")},
-		{Name: "list_files", Description: "Lista arquivos versionados, opcionalmente dentro de um diretório.",
-			Params: obj(map[string]any{"path": str("Opcional: diretório.")})},
-		{Name: "git_log", Description: "Histórico de commits (um por linha), opcionalmente de um arquivo.",
-			Params: obj(map[string]any{
-				"path":  str("Opcional: arquivo ou diretório."),
-				"limit": integer("Opcional: quantidade (padrão 20)."),
-			})},
-		{Name: "git_blame", Description: "Quem alterou cada linha de um trecho do arquivo, e em qual commit.",
-			Params: obj(map[string]any{
-				"path":       str("Arquivo."),
-				"start_line": integer("Primeira linha."),
-				"end_line":   integer("Última linha."),
-			}, "path", "start_line", "end_line")},
+		{Name: "grep", Description: "Busca uma regex (git grep -E) nos arquivos versionados; devolve arquivo:linha:texto.",
+			Params: obj(map[string]any{"pattern": str("Regex."), "path": str("Pasta ou arquivo.")}, "pattern")},
+		{Name: "list_files", Description: "Lista os arquivos versionados de uma pasta.",
+			Params: obj(map[string]any{"path": str("Pasta.")})},
+		{Name: "git_log", Description: "Commits, um por linha, opcionalmente de um caminho.",
+			Params: obj(map[string]any{"path": str("Arquivo ou pasta."), "limit": integer("Quantidade (padrão 20).")})},
+		{Name: "git_blame", Description: "Autor e commit de cada linha de um trecho.",
+			Params: obj(map[string]any{"path": file["path"], "start_line": file["start_line"], "end_line": file["end_line"]},
+				"path", "start_line", "end_line")},
 	}
 }
 
@@ -89,6 +71,7 @@ type fileArg struct {
 	Ref       string `json:"ref"`
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
+	Whole     bool   `json:"inteiro"`
 }
 
 type toolArgs struct {
@@ -98,6 +81,7 @@ type toolArgs struct {
 	Pattern   string    `json:"pattern"`
 	StartLine int       `json:"start_line"`
 	EndLine   int       `json:"end_line"`
+	Whole     bool      `json:"inteiro"`
 	Limit     int       `json:"limit"`
 	Context   int       `json:"context_lines"`
 }
@@ -158,7 +142,8 @@ func (r Repo) Executor(target func() string) llm.Executor {
 			if err != nil && out == "" && !strings.Contains(err.Error(), "fatal") {
 				out, err = "(nenhum resultado)", nil
 			}
-			out = r.filterGrep(out)
+			out = capLines(r.filterGrep(out), maxGrepLines,
+				"refine o padrão ou limite com path para ver os outros")
 		case "list_files":
 			args := []string{"ls-files"}
 			if a.Path != "" {
@@ -248,7 +233,7 @@ func (r Repo) readOne(f fileArg) (string, error) {
 	if isGitDir(clean) {
 		return "", fmt.Errorf("a pasta .git não é lida")
 	}
-	return r.readFile(toolArgs{Path: clean, Ref: f.Ref, StartLine: f.StartLine, EndLine: f.EndLine})
+	return r.readFile(toolArgs{Path: clean, Ref: f.Ref, StartLine: f.StartLine, EndLine: f.EndLine, Whole: f.Whole})
 }
 
 func checkArg(s string) error {
@@ -318,6 +303,14 @@ func (r Repo) readFile(a toolArgs) (string, error) {
 		return "(arquivo binário)", nil
 	}
 	lines := strings.Split(strings.TrimSuffix(data, "\n"), "\n")
+	// Arquivo grande sem trecho: o esqueleto, para o modelo pedir só o que interessa.
+	if a.StartLine <= 0 && a.EndLine <= 0 && !a.Whole && len(lines) > OutlineLines {
+		if o := outline(a.Path, lines); o != "" {
+			return fmt.Sprintf("(%s tem %d linhas: este é o esqueleto, com as declarações e suas linhas. Peça o trecho "+
+				"que interessa com start_line/end_line, de preferência vários de uma vez em read_files.)\n%s\n",
+				a.Path, len(lines), o), nil
+		}
+	}
 	start, end := max(a.StartLine, 1), a.EndLine
 	if end <= 0 || end > len(lines) {
 		end = len(lines)
@@ -335,6 +328,18 @@ func (r Repo) readFile(a toolArgs) (string, error) {
 		fmt.Fprintf(&b, "%5d  %s\n", i, lines[i-1])
 	}
 	return b.String() + note, nil
+}
+
+// maxGrepLines: resultados do grep devolvidos ao modelo; o resto vira uma contagem.
+const maxGrepLines = 40
+
+// capLines corta a saída em n linhas, dizendo quantas ficaram de fora.
+func capLines(s string, n int, hint string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n") + fmt.Sprintf("\n… e mais %d resultados (%s)", len(lines)-n, hint)
 }
 
 func truncate(s string) string {

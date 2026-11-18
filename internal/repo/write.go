@@ -37,26 +37,21 @@ type Change struct {
 func WriteTools() []llm.Tool {
 	str := func(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
 	return []llm.Tool{
-		{Name: "edit_file", Description: "Troca um trecho exato de um arquivo por outro. `old_string` precisa aparecer " +
-			"exatamente uma vez (copie do arquivo, com a indentação); use `replace_all` para trocar todas as ocorrências. " +
-			"Só funciona quando o <modo> diz permissão editar; cada mudança pode precisar da aprovação do desenvolvedor.",
+		{Name: "edit_file", Description: "Só com permissão editar. Troca um trecho exato do arquivo no disco: `old_string` " +
+			"precisa aparecer uma vez (copie com a indentação), ou use replace_all.",
 			Params: map[string]any{"type": "object", "required": []string{"path", "old_string", "new_string"},
 				"properties": map[string]any{
-					"path":        str("Arquivo, relativo à raiz do repositório."),
-					"old_string":  str("Trecho atual, exatamente como está no arquivo (no disco, não num commit antigo)."),
+					"path":        str("Arquivo."),
+					"old_string":  str("Trecho atual."),
 					"new_string":  str("Trecho novo."),
-					"replace_all": map[string]any{"type": "boolean", "description": "Troca todas as ocorrências."},
+					"replace_all": map[string]any{"type": "boolean"},
 				}}},
-		{Name: "write_file", Description: "Cria um arquivo NOVO com o conteúdo dado (falha se o arquivo já existe; " +
-			"para mudar um arquivo existente, use edit_file). Só com permissão editar.",
+		{Name: "write_file", Description: "Só com permissão editar. Cria um arquivo novo (para mudar um existente, edit_file).",
 			Params: map[string]any{"type": "object", "required": []string{"path", "content"},
-				"properties": map[string]any{
-					"path":    str("Arquivo novo, relativo à raiz do repositório."),
-					"content": str("Conteúdo completo do arquivo."),
-				}}},
-		{Name: "delete_file", Description: "Apaga um arquivo do repositório. Só com permissão editar.",
+				"properties": map[string]any{"path": str("Arquivo novo."), "content": str("Conteúdo completo.")}}},
+		{Name: "delete_file", Description: "Só com permissão editar. Apaga um arquivo.",
 			Params: map[string]any{"type": "object", "required": []string{"path"},
-				"properties": map[string]any{"path": str("Arquivo, relativo à raiz do repositório.")}}},
+				"properties": map[string]any{"path": str("Arquivo.")}}},
 	}
 }
 

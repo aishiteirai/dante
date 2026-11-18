@@ -350,22 +350,37 @@ shell. Para editar você mesmo, use `o`, que abre o arquivo no seu editor.
 ### Gasto de tokens
 
 Cada vez que o modelo pede uma ferramenta, a conversa inteira é reenviada a ele, e o
-provedor cobra por esse reenvio. Por isso o dante evita rodadas desnecessárias:
+provedor cobra pelo reenvio. Por isso o objetivo é responder **sem ferramentas ou com uma
+rodada só**:
 
-- **O diff vai na sua mensagem.** Ao perguntar sobre um commit ou arquivo, o diff com 10
-  linhas de contexto vai junto, uma vez por conversa. Diffs grandes (mais de 60 KB ou de
-  1/4 do contexto) viram um aviso, e o modelo pede o diff por arquivo.
-- **O modelo lê em lote.** A ferramenta `read_files` abre vários arquivos ou trechos numa
-  chamada só, e as instruções pedem para abrir só o que o diff não mostra.
-- **Cada pergunta tem um orçamento.** Por padrão são 150 mil tokens, somando todas as
-  rodadas. Passado o orçamento, o dante não executa mais ferramentas e pede ao modelo para
-  concluir com o que já leu. Ajuste em `orcamento_tokens` no `config.json` (`-1` desliga).
-- **Cada resposta mostra quanto gastou** (`↳ 58,2 mil tokens nesta resposta`), e o cabeçalho
-  mostra o total da conversa.
+1. **O pacote de revisão vai na sua mensagem.** Na primeira pergunta sobre um commit, o diff
+   do código vai junto, com 3 linhas de contexto (o cabeçalho de cada trecho diz a função).
+   Testes, documentação, arquivos gerados e os que mudaram só em espaços vão só como lista,
+   e o modelo pede o diff deles se precisar. Em Python e YAML, onde a indentação muda o
+   comportamento, espaços continuam contando como mudança. Se o código não couber (60 KB ou
+   1/4 do contexto do modelo), entram primeiro os arquivos com mais mudanças, e o resto vai
+   para a lista. O pacote também diz **onde as funções alteradas são usadas** (só
+   `arquivo:linha`, achado com `git grep`, sem gastar tokens), para o modelo ir direto ao
+   trecho certo em vez de gastar uma rodada procurando.
+2. **Leituras recortadas.** As instruções pedem para abrir código só quando uma conclusão
+   depender de algo fora do diff, com todos os trechos numa chamada de `read_files`. Um
+   arquivo com mais de 250 linhas, lido sem trecho, volta como **esqueleto**: as declarações
+   com o número da linha, para o modelo pedir só o que interessa. O `grep` devolve no máximo
+   40 resultados.
+3. **Limite de rodadas de leitura por pergunta:** 2 ao revisar, 3 ao explicar, 1 no modo
+   rápido (sem limite no modo editar). Passado o limite, o modelo é avisado para concluir com
+   o que já leu.
+4. **Os achados encerram a resposta.** Uma rodada só com `registrar_achado` não chama o modelo
+   de novo, o que poupa uma rodada inteira.
+5. **Orçamento por pergunta:** 100 mil tokens por padrão, conferido **antes** de cada rodada
+   (o gasto até ali mais o tamanho da próxima requisição). Ajuste em `orcamento_tokens` no
+   `config.json` (`-1` desliga).
+6. **Cada resposta mostra o gasto:** `↳ 23,6 mil tokens nesta resposta · 2 rodadas (entrada
+   23,2 mil, 18 mil do cache · saída 400)`. A parte do cache, informada pelo OpenRouter,
+   OpenAI, DeepSeek, Qwen e Anthropic, costuma custar bem menos.
 
-Numa simulação da revisão de um commit de 18 arquivos, essas mudanças levaram o gasto de
-20 requisições e cerca de 1 milhão de tokens para 3 requisições e cerca de 80 mil. O número
-real depende de o modelo seguir as instruções.
+Medido na revisão de um commit de 13 arquivos (+291 −195): o fluxo antigo levava 5 rodadas e
+~70 mil tokens (um modelo real chegou a 220 mil); o novo, 2 rodadas e ~24 mil.
 
 ### Conversas longas
 

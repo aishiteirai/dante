@@ -48,16 +48,19 @@ var guidelineFiles = []string{".dante/diretrizes.md", ".revisor/diretrizes.md", 
 const systemPrompt = `Você é o dante, um assistente de código sênior que trabalha no terminal do desenvolvedor, no repositório
 %q. Você revisa mudanças e também explica o código para quem quer entendê-lo. O desenvolvedor navega pelos commits e pelos
 arquivos alterados e conversa com você. Cada mensagem dele começa com um bloco <contexto> que diz o alvo (um commit ou as
-mudanças locais ainda não commitadas) e o arquivo em foco. Quando cabe, vem também um bloco <diff> com as mudanças e 10
-linhas de contexto ao redor de cada uma. Por último vem um bloco <modo> com a tarefa (revisar ou explicar) e o formato da
-resposta: siga-o, ele vale para aquela mensagem.
+mudanças locais ainda não commitadas) e o arquivo em foco. Na primeira pergunta sobre um alvo, vem também um bloco <diff>
+com as mudanças do código (3 linhas de contexto; o cabeçalho de cada trecho diz a função) e, em <fora_do_diff>, os
+arquivos alterados que não vieram (testes, documentação, gerados, só espaços ou os que não couberam), e em <quem_chama>
+onde as funções alteradas são usadas. Por último vem um bloco <modo>
+com a tarefa (revisar ou explicar) e o formato da resposta: siga-o, ele vale para aquela mensagem.
 
-Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então leia com economia:
-- Comece pelo <diff>. Ele já mostra o que mudou; não peça git_diff de novo para o mesmo alvo. Sem <diff> na mensagem,
-  peça git_diff por arquivo, começando pelos que têm mais lógica.
-- Abra arquivos só para o que o diff não mostra: quem chama o código alterado, tipos, testes relacionados. Peça só os
-  trechos necessários (start_line/end_line) e junte tudo numa chamada de read_files, ou faça várias chamadas de
-  ferramenta na mesma resposta. Não abra de novo um arquivo que já leu nesta conversa.
+Como trabalhar. Cada rodada de ferramentas reenvia a conversa inteira, então o ideal é responder sem ferramentas ou
+com uma rodada só:
+- Comece pelo <diff>: ele costuma bastar. Não peça git_diff de novo para o que já veio; peça só os de <fora_do_diff>
+  que importarem (ex.: o teste do código alterado).
+- Abra código só quando uma conclusão depender de algo fora do diff (um uso listado em <quem_chama>, um tipo). Peça
+  todos os trechos de uma vez, numa chamada de read_files com start_line/end_line. Arquivo grande lido sem trecho
+  volta como esqueleto, com as linhas de cada declaração. Não releia o que já está na conversa.
 - Não opine sobre código que não viu, no diff ou num arquivo. Use git_log e git_blame quando a intenção original ajudar.
 - Num commit, read_file com ref=<sha> mostra o arquivo como estava naquele commit; sem ref, mostra o que está no disco hoje.
 - Ancore cada observação em arquivo:linha (ex.: internal/llm/openai.go:111). Numa revisão, para bugs e falhas de segurança,
@@ -219,31 +222,91 @@ func (m model) effectiveContext() int {
 	return defaultContextTokens
 }
 
-// diffBlock devolve o diff do alvo (ou de um arquivo dele) para ir na mensagem, uma vez por
-// conversa para cada alvo/arquivo. Diffs grandes viram só um aviso.
+// diffLimit é o tamanho máximo do diff que vai na mensagem: até ~1/4 do contexto do
+// modelo (3 bytes por token), no máximo maxInlineDiff.
+func (m model) diffLimit() int {
+	limit := maxInlineDiff
+	if c := m.effectiveContext(); c > 0 {
+		limit = min(limit, c*3/4)
+	}
+	return limit
+}
+
+// diffBlock devolve o diff que vai na mensagem, uma vez por conversa para cada alvo ou
+// arquivo. Para o alvo inteiro, é o pacote de revisão: o código alterado e, à parte, a
+// lista do que ficou de fora (testes, documentação, gerados, o que não coube).
 func (m *model) diffBlock(scope string) string {
 	key := m.target + "\x00" + scope
 	if key == m.diffSent || (scope != "" && m.diffSent == m.target+"\x00") {
 		return "" // já enviado nesta conversa (o do alvo inteiro cobre os arquivos)
 	}
-	limit := maxInlineDiff
-	if c := m.effectiveContext(); c > 0 {
-		limit = min(limit, c*3/4) // até ~1/4 do contexto (3 bytes por token)
+	limit := m.diffLimit()
+	if scope != "" {
+		d, err := m.repo.DiffForModel(m.target, scope, repo.DiffContextLines)
+		if err != nil || strings.TrimSpace(d) == "" {
+			return ""
+		}
+		if len(d) > limit {
+			return fmt.Sprintf("<diff>O diff de %s tem %d KB, grande demais para vir aqui: peça git_diff com path e "+
+				"leia os trechos que importam.</diff>\n\n", scope, len(d)/1024)
+		}
+		m.diffPending = key // vira diffSent quando a resposta terminar sem erro
+		return "<diff de " + scope + ">\n" + strings.TrimRight(d, "\n") + "\n</diff>\n\n"
 	}
-	d, err := m.repo.DiffForModel(m.target, scope, repo.DiffContextLines)
-	if err != nil || strings.TrimSpace(d) == "" {
+	p, err := m.repo.ReviewDiff(m.target, limit)
+	if err != nil || (p.Included == 0 && len(p.Left) == 0) {
 		return ""
 	}
-	what := "do alvo"
-	if scope != "" {
-		what = "de " + scope
+	var b strings.Builder
+	if p.Included > 0 {
+		b.WriteString("<diff do alvo>\n" + strings.TrimRight(p.Diff, "\n") + "\n</diff>\n")
 	}
-	if len(d) > limit {
-		return fmt.Sprintf("<diff>O diff %s tem %d KB, grande demais para vir aqui: peça git_diff por arquivo.</diff>\n\n",
-			what, len(d)/1024)
+	if len(p.Left) > 0 {
+		b.WriteString("<fora_do_diff>\nAlterados, mas sem o diff acima (peça git_diff com path se precisar):\n")
+		for i, l := range p.Left {
+			if i == 60 {
+				fmt.Fprintf(&b, "… e mais %d\n", len(p.Left)-60)
+				break
+			}
+			fmt.Fprintf(&b, "- %s (+%d −%d, %s)\n", l.Path, l.Add, l.Del, l.Why)
+		}
+		b.WriteString("</fora_do_diff>\n")
 	}
-	m.diffPending = key // vira diffSent quando a resposta terminar sem erro
-	return "<diff " + what + ">\n" + strings.TrimRight(d, "\n") + "\n</diff>\n\n"
+	if len(p.Callers) > 0 {
+		b.WriteString("<quem_chama>\nOnde as funções alteradas são usadas (só a posição; leia o trecho se a revisão depender dele):\n")
+		for _, c := range p.Callers {
+			fmt.Fprintf(&b, "- %s (%s): %s", c.Name, c.File, strings.Join(c.Sites, ", "))
+			if c.More > 0 {
+				fmt.Fprintf(&b, " … e mais %d", c.More)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("</quem_chama>\n")
+	}
+	m.diffPending = key
+	return b.String() + "\n"
+}
+
+// turnLimits são as rodadas de leitura de cada pergunta, conforme a tarefa e o formato.
+// No modo editar não há limite: editar pede ler antes.
+func (m model) turnLimits() llm.Limits {
+	free := []string{findingTool}
+	for name := range writeTools {
+		free = append(free, name)
+	}
+	// Uma rodada só com achados encerra a resposta: o resumo veio antes, e o resultado da
+	// ferramenta é só "registrado". Poupa uma rodada inteira, que reenviaria tudo.
+	l := llm.Limits{Free: free, Final: []string{findingTool}}
+	switch {
+	case m.agent == agentEditar:
+	case m.level == levelRapido:
+		l.ReadRounds = 1
+	case m.task == taskExplicar:
+		l.ReadRounds = 3
+	default:
+		l.ReadRounds = 2
+	}
+	return l
 }
 
 func (m model) send(text string) (tea.Model, tea.Cmd) { return m.sendScoped(text, "") }
@@ -324,6 +387,7 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
+	ctx = llm.WithLimits(ctx, m.turnLimits())
 	ch := make(chan tea.Msg, 256)
 	m.events = ch
 	m.writes().startTurn(ch)
@@ -570,8 +634,7 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 		m.entries = append(m.entries, entry{kind: eNotice,
 			text: plural(len(g.changes), "mudança aplicada", "mudanças aplicadas") + " nesta resposta · ctrl+z desfaz"})
 	}
-	m.usage.InputTokens += msg.usage.InputTokens
-	m.usage.OutputTokens += msg.usage.OutputTokens
+	m.usage.Add(msg.usage)
 	// Ferramentas que ficaram sem resultado (cancelamento).
 	for i := range m.entries {
 		if m.entries[i].kind == eTool && !m.entries[i].done {
@@ -579,8 +642,7 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if t := msg.usage.InputTokens + msg.usage.OutputTokens; t > 0 {
-		m.entries = append(m.entries, entry{kind: eUsage, text: fmt.Sprintf("%s tokens nesta resposta (entrada %s · saída %s)",
-			humanTokens(t), humanTokens(msg.usage.InputTokens), humanTokens(msg.usage.OutputTokens))})
+		m.entries = append(m.entries, entry{kind: eUsage, text: usageLine(msg.usage)})
 	}
 	switch {
 	case msg.err == nil:
@@ -790,4 +852,17 @@ func (m model) chatWelcome(w int) string {
 		subtleStyle.Render("r revisa · / comandos (/explicar, /editar, /mapa…) · o modelo abre os arquivos sozinho"),
 	}
 	return lipgloss.NewStyle().Width(w).Render(strings.Join(lines, "\n"))
+}
+
+// usageLine: "12,3 mil tokens · 2 rodadas (entrada 11 mil, 8 mil do cache · saída 1,3 mil)".
+func usageLine(u llm.Usage) string {
+	s := humanTokens(u.InputTokens+u.OutputTokens) + " tokens nesta resposta"
+	if u.Rounds > 1 {
+		s += fmt.Sprintf(" · %d rodadas", u.Rounds)
+	}
+	in := "entrada " + humanTokens(u.InputTokens)
+	if u.CachedTokens > 0 {
+		in += ", " + humanTokens(u.CachedTokens) + " do cache"
+	}
+	return s + " (" + in + " · saída " + humanTokens(u.OutputTokens) + ")"
 }

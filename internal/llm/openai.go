@@ -60,8 +60,12 @@ type oaChunk struct {
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int64 `json:"prompt_tokens"`
-		CompletionTokens int64 `json:"completion_tokens"`
+		PromptTokens        int64 `json:"prompt_tokens"`
+		CompletionTokens    int64 `json:"completion_tokens"`
+		PromptCacheHit      int64 `json:"prompt_cache_hit_tokens"` // DeepSeek
+		PromptTokensDetails *struct {
+			CachedTokens int64 `json:"cached_tokens"` // OpenAI, OpenRouter, Qwen
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
@@ -103,13 +107,15 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		return usage, err
 	}
 
-	guard := newGuard(c.opts.TurnBudget)
+	guard := newGuard(ctx, c.opts.TurnBudget)
 	for step := 0; step < c.opts.MaxSteps; step++ {
 		bytesSent := c.fit(start, emit)
 		msg, finish, u, err := c.complete(ctx, emit)
+		if u.Rounds == 0 {
+			u.Rounds = 1
+		}
 		guard.add(u)
-		usage.InputTokens += u.InputTokens
-		usage.OutputTokens += u.OutputTokens
+		usage.Add(u)
 		if err != nil {
 			return fail(err)
 		}
@@ -121,11 +127,15 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 			}
 			return usage, nil
 		}
-		run, stop := guard.check(emit)
+		var names []string
+		for _, tc := range msg.ToolCalls {
+			names = append(names, tc.Function.Name)
+		}
+		v := guard.check(names, emit)
 		for _, tc := range msg.ToolCalls {
 			call := ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: tc.Function.Arguments}
-			if !run {
-				c.messages = append(c.messages, oaMessage{Role: "tool", ToolCallID: tc.ID, Content: ptr("ERRO: " + budgetResult)})
+			if v.blocked(guard, call.Name) {
+				c.messages = append(c.messages, oaMessage{Role: "tool", ToolCallID: tc.ID, Content: ptr("ERRO: " + v.block)})
 				continue
 			}
 			emit(Event{Kind: EvToolCall, Call: call})
@@ -139,7 +149,7 @@ func (c *openAIChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		if ctx.Err() != nil {
 			return fail(ctx.Err())
 		}
-		if stop {
+		if v.stop || guard.final(names) {
 			return usage, nil
 		}
 	}
@@ -235,7 +245,11 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 			return oaMessage{}, "", usage, fmt.Errorf("erro do provedor: %s", ch.Error.Message)
 		}
 		if ch.Usage != nil {
-			usage = Usage{InputTokens: ch.Usage.PromptTokens, OutputTokens: ch.Usage.CompletionTokens}
+			usage = Usage{InputTokens: ch.Usage.PromptTokens, OutputTokens: ch.Usage.CompletionTokens, Rounds: 1,
+				CachedTokens: ch.Usage.PromptCacheHit}
+			if d := ch.Usage.PromptTokensDetails; d != nil && d.CachedTokens > 0 {
+				usage.CachedTokens = d.CachedTokens
+			}
 		}
 		for _, choice := range ch.Choices {
 			d := choice.Delta
