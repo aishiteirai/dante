@@ -145,3 +145,20 @@ func TestPermissoes(t *testing.T) {
 		t.Fatal("valor salvo ou inválido")
 	}
 }
+
+func TestGeminiDescontinuadoNoConfigAntigo(t *testing.T) {
+	c := Defaults()
+	for i := range c.Provedores {
+		if c.Provedores[i].ID == "gemini" {
+			c.Provedores[i].Modelos = []string{"gemini-2.5-pro", "gemini-2.5-flash"}
+		}
+	}
+	c.PadroesConhecidos = []string{"claude", "deepseek", "qwen", "gemini", "openrouter", "opencode", "opencode-go", "ollama", "lmstudio"}
+	if !c.mergeDefaults() {
+		t.Fatal("deveria atualizar a lista do Gemini")
+	}
+	p, _ := c.Provider("gemini")
+	if p.Modelos[0] != "gemini-3.1-pro-preview" {
+		t.Fatalf("modelos = %v", p.Modelos)
+	}
+}
