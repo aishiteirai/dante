@@ -105,13 +105,13 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		c.messages = c.messages[:start]
 		return usage, err
 	}
-	guard := newGuard(c.opts.TurnBudget)
+	guard := newGuard(ctx, c.opts.TurnBudget)
 	for step := 0; step < c.opts.MaxSteps; step++ {
 		bytesSent := c.fit(start, emit)
 		msg, chunk, err := c.complete(ctx, emit)
-		usage.InputTokens += chunk.PromptEvalCount
-		usage.OutputTokens += chunk.EvalCount
-		guard.add(Usage{InputTokens: chunk.PromptEvalCount, OutputTokens: chunk.EvalCount})
+		u := Usage{InputTokens: chunk.PromptEvalCount, OutputTokens: chunk.EvalCount, Rounds: 1}
+		usage.Add(u)
+		guard.add(u)
 		if err != nil {
 			return fail(err)
 		}
@@ -130,10 +130,14 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 			}
 			return usage, nil
 		}
-		run, stop := guard.check(emit)
+		var names []string
+		for _, tc := range msg.ToolCalls {
+			names = append(names, tc.Function.Name)
+		}
+		v := guard.check(names, emit)
 		for i, tc := range msg.ToolCalls {
-			if !run {
-				c.messages = append(c.messages, olMessage{Role: "tool", ToolName: tc.Function.Name, Content: "ERRO: " + budgetResult})
+			if v.blocked(guard, tc.Function.Name) {
+				c.messages = append(c.messages, olMessage{Role: "tool", ToolName: tc.Function.Name, Content: "ERRO: " + v.block})
 				continue
 			}
 			args := string(tc.Function.Arguments)
@@ -157,7 +161,7 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		if ctx.Err() != nil {
 			return fail(ctx.Err())
 		}
-		if stop {
+		if v.stop {
 			return usage, nil
 		}
 	}

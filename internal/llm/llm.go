@@ -46,6 +46,16 @@ type Executor func(ctx context.Context, call ToolCall) (result string, isError b
 
 type Usage struct {
 	InputTokens, OutputTokens int64
+	CachedTokens              int64 // parte da entrada lida do cache do provedor (mais barata)
+	Rounds                    int   // requisições feitas ao modelo
+}
+
+// Add soma o uso de outra requisição.
+func (u *Usage) Add(o Usage) {
+	u.InputTokens += o.InputTokens
+	u.OutputTokens += o.OutputTokens
+	u.CachedTokens += o.CachedTokens
+	u.Rounds += o.Rounds
 }
 
 // Chat é uma conversa com histórico próprio do provedor.

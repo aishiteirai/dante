@@ -1,37 +1,124 @@
 package llm
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
-// turnGuard aplica o orçamento de tokens de uma pergunta (Options.TurnBudget). Passado o
-// orçamento, as ferramentas pedidas não rodam: o modelo recebe um aviso para concluir com
-// o que já leu. Se ele insistir em pedir ferramentas, o laço para.
+// turnGuard aplica os limites de uma pergunta:
+//   - o orçamento de tokens (Options.TurnBudget), conferido ANTES de cada rodada: a próxima
+//     requisição reenvia pelo menos a conversa da última, então, se o gasto mais essa
+//     entrada passar do orçamento, as ferramentas não rodam;
+//   - o limite de rodadas de leitura (Limits.ReadRounds, vindo do contexto da pergunta).
+//
+// Quando um limite bate, as ferramentas pedidas não rodam (menos as livres, como
+// registrar_achado) e o modelo recebe um aviso para concluir com o que já leu. Se ele
+// insistir em pedir ferramentas, o laço para.
 type turnGuard struct {
 	budget    int64
 	spent     int64
+	lastInput int64 // entrada da última requisição: a próxima é pelo menos deste tamanho
+	limits    Limits
+	rounds    int // rodadas de leitura feitas
 	exhausted bool
+}
+
+// Limits vale para uma pergunta; vai no contexto do Send (WithLimits).
+type Limits struct {
+	ReadRounds int      // rodadas com ferramentas que não são livres (0 = sem limite)
+	Free       []string // ferramentas que não contam nem são bloqueadas
+}
+
+type limitsKey struct{}
+
+// WithLimits anexa os limites da pergunta ao contexto do Send.
+func WithLimits(ctx context.Context, l Limits) context.Context {
+	return context.WithValue(ctx, limitsKey{}, l)
+}
+
+func limitsFrom(ctx context.Context) Limits {
+	l, _ := ctx.Value(limitsKey{}).(Limits)
+	return l
 }
 
 const budgetResult = "Orçamento de tokens desta pergunta esgotado: esta ferramenta não foi executada. " +
 	"Não chame mais ferramentas. Conclua a resposta com o que já leu e diga o que ficou sem verificar."
 
-func newGuard(budget int) *turnGuard { return &turnGuard{budget: int64(budget)} }
+const roundsResult = "Limite de leituras desta pergunta atingido: esta ferramenta não foi executada. " +
+	"Não chame mais ferramentas de leitura. Conclua a resposta com o que já leu e diga o que ficou sem verificar."
 
-func (g *turnGuard) add(u Usage) { g.spent += u.InputTokens + u.OutputTokens }
+func newGuard(ctx context.Context, budget int) *turnGuard {
+	return &turnGuard{budget: int64(budget), limits: limitsFrom(ctx)}
+}
 
-// check é chamado quando o modelo pede ferramentas. run=false: não executar e devolver
-// budgetResult; stop=true: além disso, encerrar o laço.
-func (g *turnGuard) check(emit func(Event)) (run, stop bool) {
-	if g.budget <= 0 || g.spent < g.budget {
-		return true, false
+func (g *turnGuard) add(u Usage) {
+	g.spent += u.InputTokens + u.OutputTokens
+	if u.InputTokens > 0 {
+		g.lastInput = u.InputTokens
 	}
-	if !g.exhausted {
-		g.exhausted = true
-		emit(Event{Kind: EvNotice, Text: fmt.Sprintf(
-			"orçamento desta pergunta atingido (%s tokens): pedi ao modelo para concluir com o que já leu", thousands(g.spent))})
-		return false, false
+}
+
+func (g *turnGuard) free(name string) bool {
+	for _, f := range g.limits.Free {
+		if f == name {
+			return true
+		}
 	}
-	emit(Event{Kind: EvNotice, IsError: true, Text: "o modelo continuou pedindo ferramentas depois do orçamento; parei a resposta"})
-	return false, true
+	return false
+}
+
+// verdict diz o que fazer com as ferramentas pedidas numa rodada.
+type verdict struct {
+	block string // "" = rodam todas; senão, o resultado das que não são livres
+	stop  bool   // encerrar o laço depois desta rodada
+}
+
+func (v verdict) blocked(g *turnGuard, name string) bool { return v.block != "" && !g.free(name) }
+
+// check é chamado quando o modelo pede ferramentas.
+func (g *turnGuard) check(names []string, emit func(Event)) verdict {
+	reads := false
+	for _, n := range names {
+		if !g.free(n) {
+			reads = true
+		}
+	}
+	if !reads {
+		return verdict{}
+	}
+	block := ""
+	switch {
+	case g.budget > 0 && g.spent+g.lastInput >= g.budget:
+		block = budgetResult
+		if !g.exhausted {
+			emit(Event{Kind: EvNotice, Text: fmt.Sprintf(
+				"orçamento desta pergunta quase no fim (%s de %s tokens): pedi ao modelo para concluir com o que já leu",
+				thousands(g.spent), thousands(g.budget))})
+		}
+	case g.limits.ReadRounds > 0 && g.rounds >= g.limits.ReadRounds:
+		block = roundsResult
+		if !g.exhausted {
+			emit(Event{Kind: EvNotice, Text: fmt.Sprintf(
+				"limite de %s de leitura desta pergunta: pedi ao modelo para concluir com o que já leu",
+				pluralRounds(g.limits.ReadRounds))})
+		}
+	default:
+		g.rounds++
+		return verdict{}
+	}
+	if g.exhausted {
+		emit(Event{Kind: EvNotice, IsError: true, Text: "o modelo continuou pedindo ferramentas depois do limite; parei a resposta"})
+		return verdict{block: block, stop: true}
+	}
+	g.exhausted = true
+	return verdict{block: block}
+}
+
+func pluralRounds(n int) string {
+	if n == 1 {
+		return "1 rodada"
+	}
+	return fmt.Sprintf("%d rodadas", n)
 }
 
 func thousands(n int64) string {
