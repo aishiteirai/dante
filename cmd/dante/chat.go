@@ -379,6 +379,14 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		return m.explainFuncText(arg)
 	}
+	switch fold(text) {
+	case "/commits", "/commit":
+		m.input.Reset()
+		return m.startCommitPlan()
+	case "/pr":
+		m.input.Reset()
+		return m.startPRDescription()
+	}
 	if f := fold(text); f == "/corrigir" || f == "/pedido" {
 		m.input.Reset()
 		m.copyFixRequest(m.allFindings())
@@ -685,8 +693,8 @@ func describeCall(c llm.ToolCall) string {
 func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 	m.streaming, m.thinking = false, false
 	m.cancel = nil
-	isolated := m.isolated
-	m.isolated = false
+	isolated, purpose := m.isolated, m.purpose
+	m.isolated, m.purpose = false, ""
 	if m.approval != nil { // cancelada com uma proposta esperando
 		m.approval = nil
 		for i := range m.entries {
@@ -748,6 +756,9 @@ func (m model) onChatDone(msg chatDoneMsg) (tea.Model, tea.Cmd) {
 	m.refreshChat()
 	m.chatView.GotoBottom()
 	m.saveTranscript()
+	if purpose != "" && msg.err == nil {
+		return m.onIsolatedDone(purpose)
+	}
 	return m, nil
 }
 

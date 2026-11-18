@@ -153,9 +153,12 @@ type model struct {
 	packed      *packedDiffs     // diffs por arquivo já enviados na conversa
 	tipShown    bool             // dica de ctrl+n já mostrada nesta conversa
 	isolated    bool             // a resposta em andamento é uma pergunta avulsa (fora da conversa)
-	mapData     *mapa.Map        // mapa do projeto salvo
-	mapGen      *mapState        // confirmação ou geração do mapa em andamento
-	mapChapter  int              // capítulo do tour na aba Mapa
+	purpose     string           // o que fazer com a resposta avulsa ao terminar ("commits", "pr")
+	plan        *commitPlan      // plano de commits (/commits)
+	planIdx     int
+	mapData     *mapa.Map // mapa do projeto salvo
+	mapGen      *mapState // confirmação ou geração do mapa em andamento
+	mapChapter  int       // capítulo do tour na aba Mapa
 	mapCache    string
 	mapCacheKey string
 
@@ -431,6 +434,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case approvalEditedMsg:
 		return m.onApprovalEdited(msg)
 
+	case commitEditedMsg:
+		return m.onCommitEdited(msg)
+
 	case funcPackMsg:
 		return m.onFuncPack(msg)
 
@@ -704,6 +710,13 @@ func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
 		return m.moveCommit(-1, len(m.rows))
 	case "end", "G":
 		return m.moveCommit(1, len(m.rows))
+	case "c": // nas mudanças locais: planejar os commits
+		if m.target == repo.WorkTree {
+			return m.startCommitPlan()
+		}
+		if _, _, ok := repo.SplitRange(m.target); ok {
+			return m.startPRDescription()
+		}
 	case "r":
 		if m.navFile && ready {
 			return m.quickReview(m.files[m.fileIdx].Path)
