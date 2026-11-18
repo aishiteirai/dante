@@ -153,9 +153,10 @@ func modeBlock(t taskMode, l levelMode) string {
 }
 
 // Instruções da tarefa de revisão (a parte de achados muda com a ferramenta registrar_achado).
-var reviewInstructions = "Tarefa: revisar. Procure problemas nas mudanças. Comece com um resumo de uma ou duas frases " +
-	"e depois liste os pontos do mais grave para o menos grave, cada um com arquivo:linha, o problema, por que " +
-	"importa e a sugestão. Se estiver tudo bem, diga isso no resumo, sem inventar problemas.\n"
+var reviewInstructions = "Tarefa: revisar. Procure problemas nas mudanças. Escreva primeiro um resumo de uma ou duas " +
+	"frases. Depois chame registrar_achado uma vez para cada problema, do mais grave para o menos grave, e não repita " +
+	"no texto o que já registrou. Se estiver tudo bem, diga isso no resumo e não registre nada. Se não puder usar " +
+	"ferramentas, liste os pontos no texto, cada um com arquivo:linha, o problema, por que importa e a sugestão.\n"
 
 // commandSuggestions: comandos que começam com o que foi digitado (só enquanto se digita
 // o primeiro comando).

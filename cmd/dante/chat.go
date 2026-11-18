@@ -25,14 +25,17 @@ const (
 	eTool
 	eNotice
 	eError
-	eUsage // gasto de tokens de uma resposta
+	eUsage   // gasto de tokens de uma resposta
+	eFinding // achado de revisão, desenhado como cartão
 )
 
 type entry struct {
 	kind   entryKind
 	text   string
-	ok     bool // ferramenta: terminou sem erro
-	done   bool // ferramenta: terminou
+	f      *finding // eFinding
+	ref    int      // número da referência do achado
+	ok     bool     // ferramenta: terminou sem erro
+	done   bool     // ferramenta: terminou
 	cache  string
 	cacheW int
 	cacheN int
@@ -116,8 +119,8 @@ func (m *model) ensureChat() error {
 	c, err := llm.New(m.prov.LLM(), llm.Options{
 		Model:  m.modelName,
 		System: m.buildSystemPrompt(),
-		Tools:  repo.Tools(),
-		Exec:   m.repo.Executor(func() string { return *sendTo }),
+		Tools:  append(repo.Tools(), findingToolDef()),
+		Exec:   withFindings(m.repo.Executor(func() string { return *sendTo })),
 		Effort: effort,
 		// Contexto do provedor; para o Claude vale o padrão do servidor (limpeza a 150 mil).
 		ContextTokens: m.effectiveContext(),
@@ -348,8 +351,17 @@ func (m *model) onChatEvent(ev llm.Event) {
 		m.thinking = true
 	case llm.EvToolCall:
 		m.thinking = false
+		if ev.Call.Name == findingTool {
+			if f, err := parseFinding(ev.Call.Args); err == nil {
+				m.entries = append(m.entries, entry{kind: eFinding, f: &f})
+			}
+			break
+		}
 		m.entries = append(m.entries, entry{kind: eTool, text: describeCall(ev.Call)})
 	case llm.EvToolResult:
+		if ev.Call.Name == findingTool {
+			break // o cartão já foi desenhado; um erro volta ao modelo, que corrige
+		}
 		for i := len(m.entries) - 1; i >= 0; i-- {
 			if m.entries[i].kind == eTool && !m.entries[i].done {
 				m.entries[i].done, m.entries[i].ok = true, !ev.IsError
@@ -555,6 +567,8 @@ func (m model) saveTranscript() {
 			fmt.Fprintf(&b, "## %s\n\n%s\n\n", m.modelName, e.text)
 		case eTool:
 			fmt.Fprintf(&b, "> %s\n\n", e.text)
+		case eFinding:
+			b.WriteString(findingMarkdown(*e.f, e.ref) + "\n")
 		default:
 			fmt.Fprintf(&b, "> **%s**\n\n", e.text)
 		}
@@ -568,6 +582,20 @@ var (
 	mdRenderers = map[int]*glamour.TermRenderer{}
 	darkBg      = true
 )
+
+// followedByFinding: depois desta resposta (pulando as leituras) vem um cartão de achado.
+func (m model) followedByFinding(i int) bool {
+	for j := i + 1; j < len(m.entries); j++ {
+		switch m.entries[j].kind {
+		case eTool:
+			continue
+		case eFinding:
+			return true
+		}
+		return false
+	}
+	return false
+}
 
 func markdown(text string, width int) string {
 	r, ok := mdRenderers[width]
@@ -616,6 +644,10 @@ func (m *model) refreshChat() {
 			if i == 0 || m.entries[i-1].kind == eUser {
 				head = "\n" + titleStyle.Render(m.modelName) + "\n"
 			}
+			// O texto antes dos cartões de achados é o resumo da revisão.
+			if m.followedByFinding(i) {
+				head += lipgloss.NewStyle().Foreground(accent).Bold(true).Render("▍RESUMO") + "\n"
+			}
 			parts = append(parts, head+body)
 		case eTool:
 			mark := m.spin.View()
@@ -632,6 +664,8 @@ func (m *model) refreshChat() {
 			parts = append(parts, "  "+errStyle.Render(lipgloss.NewStyle().Width(w-2).Render("⚠ "+e.text)))
 		case eUsage:
 			parts = append(parts, "  "+subtleStyle.Render(truncateW("↳ "+e.text, w-2)))
+		case eFinding:
+			parts = append(parts, "", renderFinding(*e.f, e.ref, w))
 		}
 	}
 	if m.streaming && (last < 0 || m.entries[last].kind != eAssistant || m.thinking) {
