@@ -301,6 +301,9 @@ func (m *model) diffBlock(scope string) string {
 			m.markPacked(f)
 		}
 	}
+	if p.Included > 0 && m.task == taskRevisar {
+		b.WriteString(reviewChecklist(p.Diff))
+	}
 	if len(p.Left) > 0 {
 		b.WriteString("<fora_do_diff>\nAlterados, mas sem o diff acima (peça git_diff com path se precisar):\n")
 		for i, l := range p.Left {
