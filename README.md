@@ -282,7 +282,7 @@ escolhido fica lembrado.
   ficam de fora, e valores com cara de segredo são mascarados.
 - O mapa fica salvo em `~/.local/share/dante/mapas/`. Rodar `/mapa` de novo resume só as
   pastas que mudaram; se nada mudou, ele só abre o mapa.
-- Uma versão compacta do mapa (~1 a 4 mil tokens) vai como contexto no começo de cada
+- Uma versão compacta do mapa (até ~1,5 mil tokens) vai como contexto no começo de cada
   conversa nova, para o modelo se orientar sem reabrir tudo.
 
 `/tour` abre a aba **Mapa** do Visualizador no primeiro capítulo: visão geral, por onde
@@ -359,7 +359,9 @@ rodada só**:
    e o modelo pede o diff deles se precisar. Em Python e YAML, onde a indentação muda o
    comportamento, espaços continuam contando como mudança. Se o código não couber (60 KB ou
    1/4 do contexto do modelo), entram primeiro os arquivos com mais mudanças, e o resto vai
-   para a lista. O pacote também diz **onde as funções alteradas são usadas** (só
+   para a lista, com as funções alteradas em cada um (lidas do diff, sem custo). O tamanho
+   acompanha o modo: ~6 KB no rápido, ~12 KB ao explicar e o limite cheio ao revisar. O
+   pacote também diz **onde as funções alteradas são usadas** (só
    `arquivo:linha`, achado com `git grep`, sem gastar tokens), para o modelo ir direto ao
    trecho certo em vez de gastar uma rodada procurando.
 2. **Leituras recortadas.** As instruções pedem para abrir código só quando uma conclusão
@@ -375,7 +377,12 @@ rodada só**:
 5. **Orçamento por pergunta:** 100 mil tokens por padrão, conferido **antes** de cada rodada
    (o gasto até ali mais o tamanho da próxima requisição). Ajuste em `orcamento_tokens` no
    `config.json` (`-1` desliga).
-6. **Cada resposta mostra o gasto:** `↳ 23,6 mil tokens nesta resposta · 2 rodadas (entrada
+6. **Nada é enviado duas vezes.** Se o modelo pedir com `git_diff` um diff que já veio no
+   pacote, recebe um aviso curto em vez do diff repetido (com mais linhas de contexto, o diff
+   é gerado normalmente).
+7. **Conversas longas custam mais:** cada pergunta reenvia a conversa inteira. Quando cada
+   requisição passa de ~20 mil tokens, o chat sugere `ctrl+n` para um assunto novo.
+8. **Cada resposta mostra o gasto:** `↳ 23,6 mil tokens nesta resposta · 2 rodadas (entrada
    23,2 mil, 18 mil do cache · saída 400)`. A parte do cache, informada pelo OpenRouter,
    OpenAI, DeepSeek, Qwen e Anthropic, costuma custar bem menos.
 
