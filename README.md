@@ -189,17 +189,18 @@ dante
    - uma URL do git (é clonada em `~/.local/share/dante/repos/`);
    - o atalho `dono/repo` do GitHub.
 2. **Modelo.** Escolha quem vai revisar. A escolha fica salva para a próxima vez.
-3. **Área de trabalho.** São quatro painéis:
-   - **[1] Commits:** o histórico com o grafo, duas linhas por commit (assunto; autor, data e
-     tamanho da mudança) e "✓ revisado" nos que você já conversou. As mudanças não
-     commitadas aparecem no topo.
-   - **[2] Arquivos:** o que mudou no commit escolhido, em árvore por pasta, com a situação
-     por extenso (novo, modificado, removido, renomeado).
-   - **[3] Visualizador:** uma coisa por vez, escolhida pelas abas do título. **Diff** é o
+3. **Área de trabalho.** São três painéis, como numa IDE: o Navegador à esquerda e, à
+   direita, o Visualizador largo em cima e o chat embaixo.
+   - **[1] Navegador:** o histórico com o grafo, duas linhas por commit (assunto; autor,
+     data e tamanho da mudança) e "✓ revisado" nos que você já conversou. As mudanças não
+     commitadas aparecem no topo. Os arquivos do commit selecionado aparecem logo abaixo
+     dele, em árvore por pasta (`~` modificado, `+` novo, `−` removido, `→` renomeado).
+   - **[2] Visualizador:** uma coisa por vez, escolhida pelas abas do título. **Diff** é o
      arquivo selecionado, com numeração antiga e nova, fundo colorido e as palavras que
-     mudaram destacadas. **Documento** é o arquivo que o modelo abriu.
-   - **[4] Chat:** a conversa com o modelo. Cada mensagem leva junto o contexto, ou seja, o
-     commit e o arquivo em foco.
+     mudaram destacadas. **Documento** é o arquivo que o modelo abriu, e **Mapa**, o mapa
+     do projeto.
+   - **[3] Chat:** a conversa com o modelo, com a largura toda. Cada mensagem leva junto o
+     contexto, ou seja, o commit e o arquivo em foco.
 
 ### Organizar os painéis
 
@@ -217,8 +218,8 @@ inclusive enquanto você digita no chat:
 | `n`, depois as setas | redimensiona: `→↓` aumentam, `←↑` diminuem |
 | `w` | empilha a coluna: só o painel com foco fica aberto, e os outros viram uma linha `▸ título` (de novo, separa) |
 | `f` | tela cheia; as setas continuam passando pelos painéis. No Visualizador, o diff passa a lado a lado |
-| `z` | minimiza o painel para a barra de baixo (`▾ [3] Visualizador`) |
-| `1` `2` `3` `4` | vai para o painel e o restaura se estiver minimizado |
+| `z` | minimiza o painel para a barra de baixo (`▾ [2] Visualizador`) |
+| `1` `2` `3` | vai para o painel e o restaura se estiver minimizado |
 | `0` | volta ao layout padrão |
 | `m` / `o` / `u` / `q` | modelo / outro repositório / atualizar / sair |
 | `p` | permissões do agente (ler ou editar) |
@@ -231,8 +232,7 @@ Teclas de cada painel (fora do chat): `Tab` passa para o próximo painel e `q` s
 
 | Painel | Teclas |
 |---|---|
-| Commits | `↑↓` escolhe · `r` revisa o alvo inteiro · `enter` vai para os arquivos · `esc` troca de repositório |
-| Arquivos | `↑↓` escolhe · `r` revisa o arquivo · `o` abre no `$EDITOR` · `d` volta ao diff · `enter` vai para o chat |
+| Navegador | `↑↓` andam pelos commits e, com o commit aberto, pelos arquivos dele (o diff acompanha) · `→` abre os arquivos do commit, `←` volta ao commit e fecha · `J`/`K` próximo e anterior arquivo · `enter` num arquivo foca o diff · `r` revisa o commit ou o arquivo · `o` abre no `$EDITOR` · `d` volta ao diff · `esc` troca de repositório |
 | Visualizador | `↑↓` `PgUp` `PgDn` `g` `G` rolam · `n`/`N` próximo e anterior trecho · `J`/`K` próximo e anterior arquivo · `[` `]` trocam a aba · `s` lado a lado · `+`/`-` mais ou menos contexto · `o` abre no editor na linha do trecho |
 | Chat | `enter` envia · `alt+enter` quebra linha · `/` comandos de modo (`tab` completa) · `ctrl+g` referências · `ctrl+o` leituras em detalhe · `ctrl+z` desfaz as mudanças da última resposta · `PgUp`/`PgDn` rolam · `ctrl+n` nova conversa · `esc` cancela a resposta |
 
