@@ -22,7 +22,7 @@ type Provider struct {
 	Listar    bool     `json:"listar_modelos,omitempty"` // consulta GET /models (servidores locais)
 	Local     bool     `json:"local,omitempty"`
 	SiteChave string   `json:"site_chave,omitempty"` // onde gerar a chave
-	Filtro    string   `json:"filtro,omitempty"`     // "gratis" (só preço zero) ou "sem_gratis" (tira os -free)
+	Filtro    string   `json:"filtro,omitempty"`     // "gratis" (só preço zero), "sem_gratis" (tira os -free) ou "gemini"
 	// Tamanho do contexto do modelo, em tokens. Guia a poda de resultados antigos; no
 	// Ollama também define o num_ctx (mais contexto usa mais memória).
 	Contexto int `json:"contexto,omitempty"`
@@ -156,6 +156,13 @@ func Defaults() Config {
 				URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", ChaveEnv: "DASHSCOPE_API_KEY",
 				SiteChave: "Alibaba Cloud Model Studio → API Key", Contexto: 128000,
 				Modelos: []string{"qwen3-coder-plus", "qwen-max", "qwen-plus"}, ModeloMapa: "qwen-plus"},
+			// Gemini pela API compatível com OpenAI. A chave do Google AI Studio tem uma camada
+			// gratuita com limite de uso; nela, o Google pode usar os dados para melhorar os
+			// produtos dele.
+			{ID: "gemini", Nome: "Gemini (Google)", Tipo: llm.KindOpenAI,
+				URL: "https://generativelanguage.googleapis.com/v1beta/openai", ChaveEnv: "GEMINI_API_KEY",
+				SiteChave: "https://aistudio.google.com/apikey", Listar: true, Filtro: "gemini", Contexto: 1000000,
+				Modelos: []string{"gemini-2.5-pro", "gemini-2.5-flash"}, ModeloMapa: "gemini-2.5-flash"},
 			{ID: "openrouter", Nome: "OpenRouter · modelos grátis", Tipo: llm.KindOpenAI,
 				URL: "https://openrouter.ai/api/v1", ChaveEnv: "OPENROUTER_API_KEY",
 				SiteChave: "https://openrouter.ai/settings/keys", Listar: true, Filtro: "gratis", Contexto: 32000},

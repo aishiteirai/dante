@@ -31,6 +31,9 @@ type oaToolCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	// Campos extras do provedor, devolvidos como vieram. O Gemini manda aqui a assinatura
+	// do raciocínio (thought_signature) e exige que ela volte na rodada seguinte.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type oaTool struct {
@@ -49,12 +52,13 @@ type oaChunk struct {
 			ReasoningContent string `json:"reasoning_content"`
 			Reasoning        string `json:"reasoning"` // Ollama/OpenRouter
 			ToolCalls        []struct {
-				Index    int    `json:"index"`
+				Index    *int   `json:"index"` // o Gemini às vezes não manda
 				ID       string `json:"id"`
 				Function struct {
 					Name      string `json:"name"`
 					Arguments string `json:"arguments"`
 				} `json:"function"`
+				ExtraContent json.RawMessage `json:"extra_content"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
@@ -222,8 +226,12 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 	}
 
 	var content, reasoning strings.Builder
-	type partial struct{ id, name, args strings.Builder }
+	type partial struct {
+		id, name, args strings.Builder
+		extra          json.RawMessage
+	}
 	calls := map[int]*partial{}
+	last := -1 // última posição usada, para pedaços sem index
 	finish := ""
 
 	sc := bufio.NewScanner(resp.Body)
@@ -262,14 +270,36 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 				emit(Event{Kind: EvReasoning, Text: r})
 			}
 			for _, tc := range d.ToolCalls {
-				p := calls[tc.Index]
+				// Sem index, uma chamada nova (com id ou nome) ganha a próxima posição, e um
+				// pedaço sem id nem nome continua a anterior. Com index, um id diferente do que
+				// já está ali também é uma chamada nova (servidores que repetem o index 0).
+				i := last
+				switch {
+				case tc.Index == nil && (tc.ID != "" || tc.Function.Name != "" || last < 0):
+					i = len(calls)
+				case tc.Index != nil:
+					i = *tc.Index
+					if p := calls[i]; p != nil && tc.ID != "" && p.id.Len() > 0 && p.id.String() != tc.ID {
+						i = len(calls)
+						for calls[i] != nil {
+							i++
+						}
+					}
+				}
+				last = i
+				p := calls[i]
 				if p == nil {
 					p = &partial{}
-					calls[tc.Index] = p
+					calls[i] = p
 				}
-				p.id.WriteString(tc.ID)
+				if p.id.String() != tc.ID {
+					p.id.WriteString(tc.ID)
+				}
 				p.name.WriteString(tc.Function.Name)
 				p.args.WriteString(tc.Function.Arguments)
+				if len(tc.ExtraContent) > 0 {
+					p.extra = append(json.RawMessage{}, tc.ExtraContent...)
+				}
 			}
 			if choice.FinishReason != "" {
 				finish = choice.FinishReason
@@ -298,6 +328,7 @@ func (c *openAIChat) complete(ctx context.Context, emit func(Event)) (oaMessage,
 		}
 		tc.Function.Name = p.name.String()
 		tc.Function.Arguments = p.args.String()
+		tc.ExtraContent = p.extra
 		if tc.Function.Arguments == "" {
 			tc.Function.Arguments = "{}"
 		}
@@ -313,13 +344,26 @@ func httpError(status int, body []byte, p Provider) error {
 		} `json:"error"`
 		Message string `json:"message"`
 	}
-	_ = json.Unmarshal(body, &e)
+	if err := json.Unmarshal(body, &e); err != nil {
+		// O Gemini às vezes devolve o erro dentro de uma lista: [{"error": {...}}].
+		var list []struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &list) == nil && len(list) > 0 {
+			e.Error.Message = list[0].Error.Message
+		}
+	}
 	msg := e.Error.Message
 	if msg == "" {
 		msg = e.Message
 	}
 	if msg == "" {
 		msg = strings.TrimSpace(string(body))
+	}
+	if status == 400 && invalidKeyMsg(msg) {
+		status = 401 // o Gemini responde 400 para chave inválida
 	}
 	switch status {
 	case 401, 403:
@@ -340,12 +384,31 @@ func httpError(status int, body []byte, p Provider) error {
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
 
+func invalidKeyMsg(msg string) bool {
+	return strings.Contains(msg, "API key not valid") || strings.Contains(msg, "API_KEY_INVALID")
+}
+
 // Filtros de ListModels.
 const (
 	FilterNone    = ""
 	FilterFree    = "gratis"     // só preço zero com ferramentas (formato do OpenRouter)
 	FilterNotFree = "sem_gratis" // tira os "-free" (no OpenCode, só funcionam dentro do opencode)
+	FilterGemini  = "gemini"     // só os modelos de conversa do Gemini (sem embeddings, imagem, áudio)
 )
+
+// geminiChat diz se o modelo do Gemini serve para conversar (e usar ferramentas).
+func geminiChat(id string) bool {
+	l := strings.ToLower(id)
+	if !strings.Contains(l, "gemini") {
+		return false
+	}
+	for _, no := range []string{"embedding", "tts", "image", "audio", "live", "robotics", "computer-use", "aqa"} {
+		if strings.Contains(l, no) {
+			return false
+		}
+	}
+	return true
+}
 
 // ListModels consulta GET /models (Ollama, LM Studio, vLLM, OpenRouter, OpenCode...),
 // aplica o filtro e põe DeepSeek e Qwen primeiro.
@@ -389,6 +452,10 @@ func ListModels(ctx context.Context, p Provider, filter string) ([]string, error
 	}
 	var ids []string
 	for _, d := range out.Data {
+		d.ID = strings.TrimPrefix(d.ID, "models/") // o Gemini lista como "models/gemini-…"
+		if filter == FilterGemini && !geminiChat(d.ID) {
+			continue
+		}
 		if onlyFree {
 			if d.Pricing == nil || !isZero(d.Pricing.Prompt) || !isZero(d.Pricing.Completion) {
 				continue
@@ -404,6 +471,15 @@ func ListModels(ctx context.Context, p Provider, filter string) ([]string, error
 	}
 	rank := func(id string) int {
 		l := strings.ToLower(id)
+		if filter == FilterGemini { // pro, depois flash, depois o resto (lite, gemma…)
+			switch {
+			case strings.Contains(l, "pro"):
+				return 0
+			case strings.Contains(l, "flash") && !strings.Contains(l, "lite"):
+				return 1
+			}
+			return 2
+		}
 		switch {
 		case strings.Contains(l, "qwen") && strings.Contains(l, "coder"):
 			return 0
@@ -417,6 +493,9 @@ func ListModels(ctx context.Context, p Provider, filter string) ([]string, error
 	sort.SliceStable(ids, func(i, j int) bool {
 		if ri, rj := rank(ids[i]), rank(ids[j]); ri != rj {
 			return ri < rj
+		}
+		if filter == FilterGemini {
+			return ids[i] > ids[j] // versões mais novas primeiro (gemini-3 antes de gemini-2.5)
 		}
 		return ids[i] < ids[j]
 	})
