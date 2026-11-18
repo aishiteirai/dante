@@ -382,3 +382,62 @@ func (r Repo) RangeCommits(t string, n int) []string {
 	}
 	return subs
 }
+
+// ---- commits e PR ----
+
+// RecentSubjects devolve os assuntos dos últimos commits, para seguir o estilo do repositório.
+func (r Repo) RecentSubjects(n int) []string {
+	out, err := r.git("log", "--no-merges", fmt.Sprintf("-%d", n), "--format=%s")
+	if err != nil {
+		return nil
+	}
+	return nonEmpty(strings.Split(out, "\n"))
+}
+
+// RangeLog devolve os commits de um intervalo com assunto e corpo, do mais antigo ao mais novo.
+func (r Repo) RangeLog(t string, n int) string {
+	b, tip, ok := SplitRange(t)
+	if !ok {
+		return ""
+	}
+	out, _ := r.git("log", "--no-merges", "--reverse", fmt.Sprintf("-%d", n), "--format=- %h %s%n%w(0,2,2)%b", b+".."+tip)
+	return strings.TrimSpace(out)
+}
+
+// DiffStat é o resumo do diff do alvo (arquivo e linhas), sem o conteúdo.
+func (r Repo) DiffStat(t string) string {
+	out, _ := r.git(r.diffArgs(t, "--stat=100")...)
+	return strings.TrimSpace(out)
+}
+
+// CommitFiles commita só estes arquivos (com o estado deles no disco, inclusive novos e
+// apagados), sem levar o que mais estiver no índice. O autor é o do git config.
+func (r Repo) CommitFiles(files []string, subject, body string) error {
+	if len(files) == 0 || strings.TrimSpace(subject) == "" {
+		return fmt.Errorf("commit sem arquivos ou sem mensagem")
+	}
+	for _, f := range files {
+		if err := checkArg(f); err != nil {
+			return err
+		}
+	}
+	if _, err := r.git(append([]string{"add", "-A", "--"}, files...)...); err != nil {
+		return err
+	}
+	args := []string{"commit", "-q", "-m", subject}
+	if strings.TrimSpace(body) != "" {
+		args = append(args, "-m", body)
+	}
+	_, err := r.git(append(append(args, "--"), files...)...)
+	return err
+}
+
+func nonEmpty(xs []string) []string {
+	var out []string
+	for _, x := range xs {
+		if strings.TrimSpace(x) != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
