@@ -251,7 +251,7 @@ do chat (`‹revisar · normal›`) e vale até você trocar.
 | `/revisar` | procura problemas (padrão) | "revise", "tem bug?", "está certo?" |
 | `/explicar` | diz o que o código faz e por quê, sem julgar | "explique", "como funciona", "o que faz" |
 | `/aprendiz` | sem jargão, com analogia, passo a passo e glossário | "como se eu fosse um estagiário", "sou iniciante" |
-| `/rapido` | cinco linhas no máximo | "seja pontual", "resumo", "direto ao ponto" |
+| `/rapido` | até cinco linhas: o essencial e no máximo três tópicos | "seja pontual", "resumo", "direto ao ponto" |
 | `/normal` | o equilíbrio de sempre | "em detalhes", "aprofunde" |
 
 Os comandos vão no começo da mensagem e podem ser combinados (`/explicar /aprendiz como
@@ -259,7 +259,11 @@ funciona o chat?`). Sozinhos, só trocam o modo. Sem comando, o dante lê o pedi
 quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 
 **Como as respostas aparecem:**
-- **Revisão:** um RESUMO e um cartão por problema, com a gravidade em cor, o local, a
+- **Explicação:** começa por uma frase com o efeito da mudança na prática e segue em rótulos
+  curtos: **Antes → depois**, **Por quê**, **Como funciona** (o caminho principal, com
+  `arquivo:linha`) e **Impacto**. O modelo agrupa por ideia, não arquivo por arquivo. Num
+  merge, ele recebe também as mensagens dos commits que o merge trouxe, onde está a intenção.
+- **Revisão:** um RESUMO com o que a mudança faz e o veredito, e um cartão por problema, com a gravidade em cor, o local, a
   explicação e a sugestão. O modelo registra cada achado por uma ferramenta própria. Se ele
   não usar a ferramenta, como acontece com alguns modelos locais, a revisão vem em texto.
 - **Referências:** cada `arquivo:linha` citado ganha um número `[n]`. `ctrl+g` lista as
