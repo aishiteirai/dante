@@ -51,15 +51,15 @@ func (m *model) relayout() {
 	}
 	m.rects = m.lay.compute(0, 1, m.width, m.areaHeight(), m.focus, m.zoomed())
 	if r, ok := m.rects[pDiff]; ok && r.h > 2 {
-		m.preview.Width, m.preview.Height = max(r.w-4, 4), max(r.h-2, 1)
+		m.preview.Width, m.preview.Height = max(r.w-4, 4), max(r.h-2-vHeaderLines, 1)
 	}
 	if r, ok := m.rects[pChat]; ok && r.h > 2 {
 		m.chatView.Width = max(r.w-4, 10)
 		m.chatView.Height = max(r.h-2-1-m.input.Height(), 1)
 		m.input.SetWidth(max(r.w-4, 10))
 	}
-	m.logOff = scrollTo(max(m.logIdx, 0), m.logOff, m.logHeight())
-	m.fileOff = scrollTo(m.fileIdx, m.fileOff, m.filesRows())
+	m.fixLogScroll()
+	m.fixFilesScroll()
 	m.renderPreview()
 	m.refreshChat()
 }
@@ -76,41 +76,6 @@ func (m model) innerRows(p paneID) int {
 func (m model) logHeight() int { return m.innerRows(pLog) }
 func (m model) filesRows() int { return m.innerRows(pFiles) }
 
-// ---- prévia (diff ou documento aberto pelo modelo) ----
-
-func (m *model) setPreview(title, content string, isDoc bool) {
-	m.previewTitle, m.previewRaw, m.previewIsDoc = title, content, isDoc
-	m.renderPreview()
-	m.preview.GotoTop()
-}
-
-func (m *model) renderPreview() {
-	w := max(m.preview.Width, 10)
-	var out []string
-	for _, l := range strings.Split(strings.TrimRight(m.previewRaw, "\n"), "\n") {
-		l = strings.ReplaceAll(l, "\t", "    ")
-		l = truncateW(l, w)
-		if !m.previewIsDoc {
-			switch {
-			case strings.HasPrefix(l, "+++"), strings.HasPrefix(l, "---"), strings.HasPrefix(l, "diff --git"),
-				strings.HasPrefix(l, "index "), strings.HasPrefix(l, "new file"), strings.HasPrefix(l, "deleted file"),
-				strings.HasPrefix(l, "similarity"), strings.HasPrefix(l, "rename "):
-				l = subtleStyle.Render(l)
-			case strings.HasPrefix(l, "+"):
-				l = addStyle.Render(l)
-			case strings.HasPrefix(l, "-"):
-				l = delStyle.Render(l)
-			case strings.HasPrefix(l, "@@"):
-				l = hunkStyle.Render(l)
-			}
-		} else if i := strings.Index(l, "  "); i > 0 && i <= 6 { // número de linha do read_file
-			l = subtleStyle.Render(l[:i]) + l[i:]
-		}
-		out = append(out, l)
-	}
-	m.preview.SetContent(strings.Join(out, "\n"))
-}
-
 // ---- moldura dos painéis (título na borda, como no noct) ----
 
 func (m model) paneTitle(p paneID) (title, extra string) {
@@ -119,9 +84,7 @@ func (m model) paneTitle(p paneID) (title, extra string) {
 	case pFiles:
 		extra = m.targetLabel()
 	case pDiff:
-		if m.previewTitle != "" {
-			title = fmt.Sprintf("[%d] %s", p+1, m.previewTitle)
-		}
+		title = fmt.Sprintf("[%d] Visualizador", p+1)
 	case pChat:
 		if m.modelName == "" {
 			extra = "sem modelo (m)"
@@ -134,6 +97,9 @@ func (m model) paneTitle(p paneID) (title, extra string) {
 
 func (m model) paneStatus(p paneID) string {
 	if p != m.focus {
+		if p == pDiff {
+			return m.visualizerStatus()
+		}
 		return ""
 	}
 	switch m.mode {
@@ -142,10 +108,17 @@ func (m model) paneStatus(p paneID) string {
 	case modeResize:
 		return "redimensionar: setas · esc"
 	}
-	if m.zoom {
-		return "⛶ tela cheia"
+	s := ""
+	if p == pDiff {
+		s = m.visualizerStatus()
 	}
-	return ""
+	if m.zoom {
+		if s != "" {
+			s += " · "
+		}
+		s += "⛶ tela cheia"
+	}
+	return s
 }
 
 func (m model) frame(p paneID, r rect, content string) []string {
@@ -176,7 +149,9 @@ func (m model) frame(p paneID, r rect, content string) []string {
 	inner := r.w - 4
 	status := m.paneStatus(p)
 	head := tst.Render(title)
-	if extra != "" {
+	if p == pDiff {
+		head += "  " + m.tabsLabel()
+	} else if extra != "" {
 		head += " " + subtleStyle.Render(extra)
 	}
 	room := r.w - 5 // "╭─ " + " " + "╮"
@@ -218,7 +193,7 @@ func (m model) paneContent(p paneID, r rect) string {
 	case pFiles:
 		return m.viewFiles(w, h)
 	case pDiff:
-		return m.preview.View()
+		return m.visualizerHeader(w) + m.preview.View()
 	case pChat:
 		return m.viewChat(w)
 	}
@@ -381,7 +356,7 @@ func (m model) helpLine() string {
 	case pFiles:
 		return base + "↑↓ arquivo · r revisar · o editor · enter chat"
 	case pDiff:
-		return base + "↑↓ rolar · o editor · d diff · r revisar"
+		return base + "n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
 	case pChat:
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"
@@ -389,43 +364,6 @@ func (m model) helpLine() string {
 		return base + "enter envia · alt+enter quebra linha · ctrl+n nova conversa"
 	}
 	return base
-}
-
-// ---- painel: commits ----
-
-func (m model) viewLog(w, h int) string {
-	if m.rows == nil {
-		return subtleStyle.Render("carregando…")
-	}
-	if len(m.rows) == 0 {
-		return subtleStyle.Render("Repositório sem commits.")
-	}
-	var b strings.Builder
-	end := min(m.logOff+h, len(m.rows))
-	for i := m.logOff; i < end; i++ {
-		r := m.rows[i]
-		var line string
-		if r.worktree {
-			line = warnStyle.Render("● ") + boldStyle.Render("Mudanças locais") + subtleStyle.Render(fmt.Sprintf(" (%d)", m.dirty))
-		} else if r.c.SHA == "" {
-			line = subtleStyle.Render(r.c.Graph)
-		} else {
-			line = subtleStyle.Render(r.c.Graph) + shaStyle.Render(r.c.Short) + " "
-			if r.c.Refs != "" {
-				line += refStyle.Render("("+compactRefs(r.c.Refs)+")") + " "
-			}
-			line += r.c.Subject
-			if extra := subtleStyle.Render("  " + r.c.Author + ", " + r.c.When); lipgloss.Width(line)+lipgloss.Width(extra) <= w {
-				line += extra
-			}
-		}
-		line = truncateW(line, w)
-		if i == m.logIdx {
-			line = cursorBg.Render(padTo(line, w))
-		}
-		b.WriteString(line + "\n")
-	}
-	return b.String()
 }
 
 func compactRefs(s string) string {
@@ -438,41 +376,6 @@ func padTo(s string, w int) string {
 		return s + strings.Repeat(" ", d)
 	}
 	return s
-}
-
-// ---- painel: arquivos ----
-
-func (m model) viewFiles(w, h int) string {
-	switch {
-	case m.files == nil:
-		return subtleStyle.Render("carregando…")
-	case len(m.files) == 0:
-		return subtleStyle.Render("nenhum arquivo alterado")
-	}
-	var lines []string
-	end := min(m.fileOff+h, len(m.files))
-	for i := m.fileOff; i < end; i++ {
-		f := m.files[i]
-		st, ok := statusStyle[f.Status]
-		if !ok {
-			st = subtleStyle
-		}
-		stats := addStyle.Render(fmt.Sprintf("+%d", f.Add)) + " " + delStyle.Render(fmt.Sprintf("-%d", f.Del))
-		if f.Binary {
-			stats = subtleStyle.Render("binário")
-		}
-		name := f.Path
-		room := w - 2 - lipgloss.Width(stats) - 1
-		if lipgloss.Width(name) > room {
-			name = "…" + name[max(len(name)-room+1, 0):]
-		}
-		line := st.Render(f.Status) + " " + padTo(name, room) + " " + stats
-		if i == m.fileIdx {
-			line = cursorBg.Render(padTo(truncateW(line, w), w))
-		}
-		lines = append(lines, truncateW(line, w))
-	}
-	return strings.Join(lines, "\n")
 }
 
 // ---- painel: chat ----

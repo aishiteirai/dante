@@ -97,11 +97,20 @@ type model struct {
 	mode     int
 	drag     *dragState
 
-	preview      viewport.Model
-	previewTitle string
-	previewRaw   string
-	previewIsDoc bool // documento aberto pelo modelo (true) ou diff (false)
-	previewKey   string
+	preview    viewport.Model
+	previewKey string
+	vtab       vTab   // aba do Visualizador
+	diffPath   string // arquivo do diff mostrado
+	diffRaw    string
+	docTitle   string
+	docRaw     string
+	docIsDiff  bool
+	diffSplit  int // splitAuto, splitOn, splitOff
+	diffCtx    int // linhas de contexto do diff na tela
+	hunkStarts []int
+	hunkLines  []int
+	stats      map[string]repo.CommitStat
+	reviewed   map[string]bool
 
 	// chat
 	prov        config.Provider
@@ -164,6 +173,7 @@ func newModel(cfg config.Config, repoFlag, modelFlag string) model {
 		sendTo:    &target,
 		flagModel: modelFlag,
 		lay:       loadLayout(),
+		diffCtx:   defaultDiffCtx,
 	}
 	switch {
 	case repoFlag != "":
@@ -209,7 +219,7 @@ type filesMsg struct {
 }
 
 type previewMsg struct {
-	key, title, content string
+	key, path, content string
 }
 
 type modelsListedMsg struct {
@@ -240,17 +250,17 @@ func loadFiles(r repo.Repo, target string) tea.Cmd {
 	}
 }
 
-func loadDiff(r repo.Repo, target, path string) tea.Cmd {
+func loadDiff(r repo.Repo, target, path string, ctxLines int) tea.Cmd {
 	key := target + "\x00" + path
 	return func() tea.Msg {
-		d, err := r.Diff(target, path)
+		d, err := r.DiffContext(target, path, ctxLines)
 		if err != nil {
 			d = "erro: " + err.Error()
 		}
 		if strings.TrimSpace(d) == "" {
 			d = "(sem diferenças de texto)"
 		}
-		return previewMsg{key: key, title: "Diff · " + path, content: d}
+		return previewMsg{key: key, path: path, content: d}
 	}
 }
 
@@ -343,15 +353,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.setErr(msg.err.Error())
 		}
+		sortFiles(msg.files)
 		m.files, m.filesFor = msg.files, msg.target
 		m.fileIdx, m.fileOff = 0, 0
 		return m, m.previewSelected()
+
+	case statsMsg:
+		if msg.root == m.repo.Root {
+			m.stats = msg.stats
+		}
+		return m, nil
 
 	case previewMsg:
 		if msg.key != m.previewKey {
 			return m, nil
 		}
-		m.setPreview(msg.title, msg.content, false)
+		m.setDiff(msg.path, msg.content)
 		return m, nil
 
 	case chatEventMsg:
@@ -406,6 +423,9 @@ func (m model) onRepoOpened(msg repoOpenedMsg) (tea.Model, tea.Cmd) {
 	m.repo = repo.Repo{Root: msg.root, Bloquear: m.cfg.ArquivosBloqueados, Liberar: m.cfg.ArquivosLiberados}
 	m.rows, m.files, m.filesFor = nil, nil, ""
 	m.logIdx, m.logOff, m.fileIdx, m.fileOff = 0, 0, 0, 0
+	m.stats, m.reviewed = nil, loadReviewed(msg.root)
+	m.docRaw, m.docTitle = "", ""
+	m.clearPreview()
 	m.target = repo.WorkTree
 	m.focus = pLog
 	m.mode = modeNormal
@@ -457,8 +477,9 @@ func (m model) onLog(msg logMsg) (tea.Model, tea.Cmd) {
 		m.files = nil
 		return m, nil
 	}
-	m.logOff = scrollTo(m.logIdx, m.logOff, m.logHeight())
-	return m.selectTarget()
+	m.fixLogScroll()
+	nm, cmd := m.selectTarget()
+	return nm, tea.Batch(cmd, loadStats(m.repo, rows))
 }
 
 func (m model) selectedTarget() string {
@@ -502,12 +523,12 @@ func (m model) nextSelectable(from, dir int) int {
 func (m *model) previewSelected() tea.Cmd {
 	if len(m.files) == 0 {
 		m.previewKey = ""
-		m.setPreview("", "", false)
+		m.clearPreview()
 		return nil
 	}
 	f := m.files[m.fileIdx]
 	m.previewKey = m.target + "\x00" + f.Path
-	return loadDiff(m.repo, m.target, f.Path)
+	return loadDiff(m.repo, m.target, f.Path, max(m.diffCtx, defaultDiffCtx))
 }
 
 // ---- área de trabalho: teclas dos painéis ----
@@ -550,7 +571,7 @@ func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
 	case "r":
 		return m.quickReview("")
 	}
-	m.logOff = scrollTo(m.logIdx, m.logOff, m.logHeight())
+	m.fixLogScroll()
 	if moved {
 		return m.selectTarget()
 	}
@@ -586,13 +607,15 @@ func (m model) updateFilesKeys(key string) (tea.Model, tea.Cmd) {
 				m.setErr("o arquivo foi removido neste alvo")
 				return m, nil
 			}
-			return m, openInEditor(m.repo.Root, f.Path, firstHunkLine(m.previewRaw))
+			return m, openInEditor(m.repo.Root, f.Path, firstHunkLine(m.diffRaw))
 		}
-	case "d":
+	case "d", "[", "]":
 		// Volta do documento aberto pelo modelo para o diff.
-		return m, m.previewSelected()
+		m.vtab = vtDiff
+		m.renderPreview()
+		return m, nil
 	}
-	m.fileOff = scrollTo(m.fileIdx, m.fileOff, m.filesRows())
+	m.fixFilesScroll()
 	if m.fileIdx != prev {
 		return m, m.previewSelected()
 	}
