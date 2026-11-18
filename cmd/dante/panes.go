@@ -356,8 +356,13 @@ func (m model) onMouse(ev tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.drag = &d
 			return m, nil
 		}
-		if p, _, ok := m.paneAt(ev.X, ev.Y); ok && p != m.focus {
-			return m.focusPane(p)
+		if p, _, ok := m.paneAt(ev.X, ev.Y); ok {
+			if p == pDiff {
+				m.clickLine(ev.Y) // marca a linha (f explica a função dela)
+			}
+			if p != m.focus {
+				return m.focusPane(p)
+			}
 		}
 
 	case ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown:

@@ -150,6 +150,7 @@ type model struct {
 	permIdx     int              // seleção no painel de permissões
 	packed      *packedDiffs     // diffs por arquivo já enviados na conversa
 	tipShown    bool             // dica de ctrl+n já mostrada nesta conversa
+	isolated    bool             // a resposta em andamento é uma pergunta avulsa (fora da conversa)
 	mapData     *mapa.Map        // mapa do projeto salvo
 	mapGen      *mapState        // confirmação ou geração do mapa em andamento
 	mapChapter  int              // capítulo do tour na aba Mapa
@@ -421,6 +422,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case approvalEditedMsg:
 		return m.onApprovalEdited(msg)
+
+	case funcPackMsg:
+		return m.onFuncPack(msg)
 
 	case mapScannedMsg:
 		return m.onMapScanned(msg)

@@ -330,6 +330,12 @@ func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 			m.diffCtx = max((m.diffCtx-2)/2, defaultDiffCtx)
 			return m, m.previewSelected()
 		}
+	case "f": // explica a função da linha marcada (clique) ou do trecho atual
+		if p, ref, line, ok := m.funcLocation(); ok {
+			return m.explainFuncAt(p, ref, line)
+		}
+		m.setInfo("abra um arquivo ou um diff e clique numa linha da função")
+		return m, nil
 	case "o", "e":
 		if len(m.files) > 0 {
 			f := m.files[m.fileIdx]

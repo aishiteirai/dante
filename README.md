@@ -293,6 +293,22 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
 
+### O que faz esta função?
+
+Para entender uma função sem gastar uma conversa inteira:
+
+- **No Visualizador:** clique numa linha da função (ela ganha a marca ▶) e aperte `f`. Sem
+  clique, vale o trecho atual do diff, ou a primeira linha visível na aba Documento.
+- **No chat:** `/funcao NomeDaFuncao`, ou `/funcao` seguido do código colado. Uma mensagem com
+  uma função colada e "o que faz?" também vai por esse caminho.
+
+O dante acha a função e monta, sem gastar tokens, o pacote: o corpo (com o comentário que a
+documenta), **onde ela é usada** (até 8 chamadas, com a linha de código de cada uma) e as
+funções do projeto que ela chama. A pergunta vai numa conversa à parte, sem ferramentas e
+sem o histórico do chat: costuma ficar entre 1 e 3 mil tokens. A resposta diz o que a função
+faz, como funciona, onde é usada e os cuidados, com referências `[n]` para abrir as linhas.
+A conversa principal continua como estava.
+
 ### Mapa do projeto e tour
 
 `/mapa` gera um mapa do projeto, só quando você pede. Antes, o dante mostra quantos arquivos
