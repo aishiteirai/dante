@@ -27,6 +27,10 @@ type turnGuard struct {
 type Limits struct {
 	ReadRounds int      // rodadas com ferramentas que não são livres (0 = sem limite)
 	Free       []string // ferramentas que não contam nem são bloqueadas
+	// Final são ferramentas que encerram a resposta: numa rodada só com elas, os
+	// resultados entram no histórico e o modelo não é chamado de novo (ex.: registrar_achado,
+	// cujo resultado é só "registrado"; o resumo já veio antes).
+	Final []string
 }
 
 type limitsKey struct{}
@@ -65,6 +69,23 @@ func (g *turnGuard) free(name string) bool {
 		}
 	}
 	return false
+}
+
+// final: todas as ferramentas da rodada encerram a resposta.
+func (g *turnGuard) final(names []string) bool {
+	if len(names) == 0 || len(g.limits.Final) == 0 {
+		return false
+	}
+	for _, n := range names {
+		ok := false
+		for _, f := range g.limits.Final {
+			ok = ok || f == n
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // verdict diz o que fazer com as ferramentas pedidas numa rodada.

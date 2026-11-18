@@ -229,3 +229,38 @@ func TestLimiteDeRodadasDeLeitura(t *testing.T) {
 		t.Fatalf("uso: %+v", u)
 	}
 }
+
+func TestRodadaFinalEncerraAResposta(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(b, &body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"Resumo.","tool_calls":[{"index":0,"id":"f1","function":{"name":"registrar_achado","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	exec := func(context.Context, ToolCall) (string, bool) { return "registrado", false }
+	chat, _ := New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m", Tools: []Tool{readTool}, Exec: exec})
+	ctx := WithLimits(context.Background(), Limits{Final: []string{"registrar_achado"}})
+	if _, err := chat.Send(ctx, "revise", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("uma rodada só com achados deveria encerrar: %d requisições", len(bodies))
+	}
+	// A próxima pergunta leva os resultados pendentes antes dela.
+	if _, err := chat.Send(ctx, "e agora?", func(Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := bodies[1]["messages"].([]any)
+	roles := []string{}
+	for _, m := range msgs {
+		roles = append(roles, m.(map[string]any)["role"].(string))
+	}
+	if strings.Join(roles, ",") != "user,assistant,tool,user" {
+		t.Fatalf("histórico = %v", roles)
+	}
+}

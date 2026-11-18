@@ -161,7 +161,7 @@ func (c *ollamaChat) Send(ctx context.Context, user string, emit func(Event)) (U
 		if ctx.Err() != nil {
 			return fail(ctx.Err())
 		}
-		if v.stop {
+		if v.stop || guard.final(names) {
 			return usage, nil
 		}
 	}

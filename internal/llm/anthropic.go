@@ -91,9 +91,22 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 	var usage Usage
 	// Histórico só cresce no fim: em caso de erro, desfaz esta mensagem inteira.
 	start := len(c.messages)
-	c.messages = append(c.messages, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(user)))
+	// A resposta anterior pode ter terminado numa rodada de ferramentas finais (os
+	// resultados ainda não foram enviados): a pergunta vai na mesma mensagem, depois deles.
+	pending := -1
+	if n := len(c.messages); n > 0 && c.messages[n-1].OfUser != nil {
+		u := c.messages[n-1].OfUser
+		pending = len(u.Content)
+		u.Content = append(u.Content, anthropic.NewBetaTextBlock(user))
+	} else {
+		c.messages = append(c.messages, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(user)))
+	}
 	fail := func(err error) (Usage, error) {
 		c.messages = c.messages[:start]
+		if pending >= 0 {
+			u := c.messages[start-1].OfUser
+			u.Content = u.Content[:pending]
+		}
 		return usage, err
 	}
 
@@ -160,7 +173,7 @@ func (c *anthropicChat) Send(ctx context.Context, user string, emit func(Event))
 			return fail(ctx.Err())
 		}
 		c.messages = append(c.messages, anthropic.NewBetaUserMessage(results...))
-		if v.stop {
+		if v.stop || guard.final(names) {
 			return usage, nil
 		}
 	}
