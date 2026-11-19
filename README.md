@@ -18,6 +18,18 @@ dante · meu-app (main)                                          DeepSeek · dee
 ctrl+space comandos · alt+setas foco · ↑↓ arquivo · r revisar · o editor           ▾ minimizados
 ```
 
+## O que o dante é (e o que não é)
+
+O dante é a **camada de entendimento e revisão com IA** para quem trabalha com agentes de
+código: entender um projeto, saber onde mexer, revisar o que o agente fez e organizar commits
+e PRs. Ele junta o que as ferramentas fixas já sabem (git, linters) com o raciocínio do modelo.
+
+Ele **não** substitui linters, formatadores ou plataformas de qualidade como
+[Qlty](https://qlty.sh) e [Ultracite](https://www.ultracite.ai): **usa** essas ferramentas
+quando o projeto as tem e mostra só o que a mudança introduziu. Elas respondem "o código
+segue as regras?"; o dante responde "o que a mudança faz, quem ela afeta e onde está o erro
+de lógica?".
+
 ## Instalação
 
 ### Windows (PowerShell, sem administrador)

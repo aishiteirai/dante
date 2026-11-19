@@ -16,17 +16,29 @@ Princípios: montar o contexto **sem o modelo** (git, grep, mapa) e gastar o mí
 funcionar com qualquer provedor, inclusive gratuitos e locais; segredos nunca saem da máquina;
 interface e respostas em português, didáticas quando pedido.
 
+Escopo: o dante é a **camada de entendimento e revisão com IA** do fluxo "pessoa + agente de
+código". Junta o que as ferramentas fixas já sabem (git, Qlty, Ultracite, os linters do
+projeto) com o raciocínio do modelo, para entender um projeto, saber onde mexer, revisar o
+que o agente fez (antes, durante e depois) e organizar commits e PRs. Funciona no terminal,
+dentro do Claude Code (hook e MCP), na IDE e no CI.
+**Fora do escopo:** lintar, formatar ou medir por conta própria (usa Qlty, Ultracite/Biome/
+Oxlint/ESLint, ruff, go vet, golangci-lint, tsc), painel na nuvem e autonomia de edição.
+Das ferramentas fixas, o dante mostra **só o que a mudança introduziu** (como o Qlty).
+
 Fluxo que guia o roteiro: projeto novo → entender a estrutura → saber onde mexer → pedir ao
 Claude → revisar o que ele fez → commits e PR organizados.
 
 Fases:
-1. Revisão: branch como um PR (base...branch), seção Impacto, listas de verificação por tipo
-   de mudança, "pedir a correção ao Claude" (texto pronto a partir dos achados).
-2. Commits: planejar a divisão em commits, mensagens (Conventional Commits) e descrição do PR.
-3. Onboarding: explorador do repositório inteiro, aba Arquivo, "onde mexo para fazer X?" com
-   briefing para o Claude, tour por funcionalidade.
-4. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
-5. Integração: comandos sem interface (`dante review/explain/ask`) e servidor MCP.
+1. Feito. Revisão: branch como um PR, seção Impacto, listas de verificação, /corrigir.
+2. Feito. Commits: /commits (plano em Conventional Commits, o git só roda com confirmação), /pr.
+3. Feito. Onboarding: aba Arquivo, explorador do projeto, /onde (com briefing), /como.
+4. Verificações locais: detectar e rodar as ferramentas do projeto nos arquivos alterados,
+   com permissão por repositório; só os problemas novos, como cartões que entram na revisão
+   como fatos (sem gastar tokens).
+5. Integração com o agente e o CI: `dante review --hook` (devolve os problemas ao Claude Code
+   antes de a pessoa revisar), comandos sem interface, servidor MCP, `dante review --ci` com
+   quality gate e /regras (gerar o CLAUDE.md/AGENTS.md do projeto).
+6. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
 Em paralelo: conjunto de perguntas de teste para medir as respostas.
 
 ## Convenções
