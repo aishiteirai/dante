@@ -139,3 +139,16 @@ func TestOiNaoViraRevisao(t *testing.T) {
 		t.Fatalf("\"revise\": tarefa %s, diff %q", taskNames[m.task], m.diffPending)
 	}
 }
+
+func TestCumprimentoVaiAvulso(t *testing.T) {
+	for _, s := range []string{"oi", "Olá!", "bom dia, tudo bem?", "valeu", "e aí", "obrigado!!"} {
+		if !isSmallTalk(s) {
+			t.Errorf("%q deveria ser cumprimento", s)
+		}
+	}
+	for _, s := range []string{"oi, o que faz o main.go?", "revise", "tudo bem com esse commit?", "ok, pode corrigir", "ok", "certo", "", "123"} {
+		if isSmallTalk(s) {
+			t.Errorf("%q não é só cumprimento", s)
+		}
+	}
+}
