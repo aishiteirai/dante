@@ -365,6 +365,35 @@ revisão com o modelo e devolve os achados de gravidade média ou maior (gasta t
 tarefa). Quando o Claude já está corrigindo o que o dante apontou, o hook deixa terminar, para
 não entrar em laço.
 
+**Servidor MCP (contexto para o Claude Code, sem gastar tokens do dante).** No repositório:
+
+```bash
+dante mcp instalar         # registra o servidor no .mcp.json do projeto
+```
+
+Na próxima vez que abrir o Claude Code no projeto, aprove o servidor `dante`. O agente passa a
+ter ferramentas que montam o contexto pelo git, sem chamar modelo nenhum (o próprio agente é o
+modelo):
+
+| Ferramenta | O que devolve |
+|---|---|
+| `dante_onde` | os arquivos e linhas mais relevantes para termos de busca, com o esqueleto dos principais |
+| `dante_funcao` | o corpo de uma função, onde ela é usada e o que ela chama |
+| `dante_revisao` | o pacote de revisão das mudanças (diff, quem chama, listas de verificação, problemas novos dos linters) |
+| `dante_verificar` | só os problemas novos das ferramentas do projeto |
+| `dante_mapa` | o mapa do projeto (ou as pastas, sem mapa) |
+| `dante_quem_usa` | quem cita um arquivo |
+
+Funciona em qualquer cliente MCP (Cursor, Zed, VS Code…): o comando é `dante mcp`.
+
+**Regras para os agentes (`/regras` ou `dante regras`).** O dante junta os fatos do projeto
+(pastas, tecnologias, comandos do Makefile e do `package.json`, linters, estilo dos commits,
+README, mapa e o `CLAUDE.md`/`AGENTS.md` atual) e pede só a redação do arquivo de instruções:
+visão geral, estrutura, comandos, convenções, cuidados e o que rodar antes de terminar. O
+rascunho vai para a área de transferência e para os pedidos do dante; `/regras salvar` (ou
+`dante regras --salvar`) grava o `CLAUDE.md` (ou `/regras salvar AGENTS.md`), guardando a
+versão anterior.
+
 **CI (quality gate).** `--ci --falhar-em SEV` sai com erro quando há achado com gravidade
 igual ou maior (`baixa`, `media`, `alta`, `critica`; erros das ferramentas contam como média).
 Exemplo de GitHub Actions:

@@ -33,6 +33,9 @@ const headlessUsage = `Comandos sem interface:
   dante explain ARQ:LINHA|Nome explica uma função
   dante ask "pergunta"         pergunta sobre as mudanças
   dante hook instalar [--ia]   configura o hook no .claude/settings.json deste repositório
+  dante mcp                    servidor MCP (contexto do repositório para o Claude Code e afins)
+  dante mcp instalar           registra o servidor no .mcp.json deste repositório
+  dante regras [--salvar]      rascunho do CLAUDE.md do projeto (com --salvar, grava)
 
   alvo: "local" (mudanças locais), um commit, ou base...branch (ex.: main...feat/x).
   Sem alvo: as mudanças locais; sem elas, a branch atual × main; senão, o último commit.
@@ -40,7 +43,7 @@ const headlessUsage = `Comandos sem interface:
 `
 
 var headlessCmds = map[string]bool{"review": true, "revisar": true, "check": true, "verificar": true, "explain": true,
-	"explicar": true, "ask": true, "perguntar": true, "hook": true}
+	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true}
 
 // runHeadless roda um comando sem interface e devolve o código de saída.
 func runHeadless(cfg config.Config, args []string) int {
@@ -56,11 +59,18 @@ func runHeadless(cfg config.Config, args []string) int {
 	failAt := fs.String("falhar-em", "alta", "gravidade mínima que faz o CI falhar")
 	hook := fs.Bool("hook", false, "modo hook do Claude Code")
 	withAI := fs.Bool("ia", false, "no hook: também a revisão com IA (gasta tokens)")
+	save := fs.Bool("salvar", false, "regras: grava o arquivo na raiz do repositório")
 	if err := fs.Parse(reorder(args[1:])); err != nil {
 		return 2
 	}
 	rest := fs.Args()
 
+	if cmd == "mcp" {
+		if len(rest) > 0 && (rest[0] == "instalar" || rest[0] == "install") {
+			return installMCP()
+		}
+		return runMCP(cfg, os.Stdin, os.Stdout)
+	}
 	if cmd == "hook" {
 		if len(rest) == 0 || (rest[0] != "instalar" && rest[0] != "install") {
 			fmt.Fprint(os.Stderr, headlessUsage)
@@ -94,6 +104,8 @@ func runHeadless(cfg config.Config, args []string) int {
 	}
 
 	switch cmd {
+	case "regras":
+		return headlessRegras(m, *save, firstOr(rest, ""))
 	case "check", "verificar":
 		issues := headlessChecks(m, true)
 		printIssues(issues)
@@ -201,7 +213,7 @@ func headlessModel(cfg config.Config, modelFlag, arg, cmd string) (model, error)
 	// Alvo: o pedido, ou as mudanças locais, ou a branch atual × main, ou o último commit.
 	target := ""
 	switch {
-	case cmd != "ask" && cmd != "perguntar" && cmd != "explain" && cmd != "explicar" && arg != "":
+	case cmd != "ask" && cmd != "perguntar" && cmd != "explain" && cmd != "explicar" && cmd != "regras" && arg != "":
 		target = arg
 	case cmd == "ask" || cmd == "perguntar":
 		if looksLikeTarget(arg) {
@@ -495,13 +507,10 @@ func installHook(cfg config.Config, withAI bool) int {
 		fmt.Fprintln(os.Stderr, "dante:", err)
 		return 2
 	}
-	bin := "dante"
-	if _, err := exec.LookPath("dante"); err != nil {
-		if exe, err := os.Executable(); err == nil {
-			bin = strconv.Quote(exe)
-		}
+	command := strconv.Quote(danteBin()) + " review --hook"
+	if danteBin() == "dante" {
+		command = "dante review --hook"
 	}
-	command := bin + " review --hook"
 	if withAI {
 		command += " --ia"
 	}
@@ -621,4 +630,16 @@ func headlessAsk(m model, q string) int {
 		fmt.Print("\n" + findingsMarkdown(r.findings))
 	}
 	return 0
+}
+
+// danteBin é como chamar o dante num hook ou no MCP: "dante" se estiver no PATH, senão o
+// caminho deste executável.
+func danteBin() string {
+	if _, err := exec.LookPath("dante"); err == nil {
+		return "dante"
+	}
+	if exe, err := os.Executable(); err == nil {
+		return exe
+	}
+	return "dante"
 }

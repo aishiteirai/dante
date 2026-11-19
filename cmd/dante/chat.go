@@ -398,6 +398,10 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		return m.explainFuncText(arg)
 	}
+	if f := fold(text); f == "/regras" || strings.HasPrefix(f, "/regras ") {
+		m.input.Reset()
+		return m.startRegras(strings.TrimSpace(text[len("/regras"):]))
+	}
 	if f := fold(text); strings.HasPrefix(f, "/onde ") || f == "/onde" || strings.HasPrefix(f, "/como ") || f == "/como" {
 		kind := strings.TrimPrefix(strings.Fields(f)[0], "/")
 		m.input.Reset()
