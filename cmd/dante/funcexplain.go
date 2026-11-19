@@ -264,7 +264,7 @@ func (m *model) clickLine(y int) {
 	if idx >= 0 && idx < len(m.rowLines) && m.rowLines[idx] > 0 {
 		m.markLine = m.rowLines[idx]
 		m.renderPreview()
-		m.setInfo(fmt.Sprintf("linha %d marcada · f explica a função dela", m.markLine))
+		m.setInfo(fmt.Sprintf("linha %d marcada · f explica a função dela · i o que é isso", m.markLine))
 	}
 }
 

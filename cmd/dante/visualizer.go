@@ -358,6 +358,12 @@ func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 		}
 		m.setInfo("abra um arquivo ou um diff e clique numa linha da função")
 		return m, nil
+	case "i": // o que é a construção da linha marcada
+		if p, ref, line, ok := m.funcLocation(); ok {
+			return m.whatAt(p, ref, line)
+		}
+		m.setInfo("abra um arquivo ou um diff e clique numa linha")
+		return m, nil
 	case "o", "e":
 		if len(m.files) > 0 {
 			f := m.files[m.fileIdx]

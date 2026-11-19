@@ -40,7 +40,9 @@ Fases:
    instalar` (devolve os problemas novos ao Claude Code antes de a pessoa revisar);
    `--ci --falhar-em` (quality gate); `dante mcp` (ferramentas de contexto sem tokens, com
    `dante mcp instalar`); /regras e `dante regras` (rascunho do CLAUDE.md/AGENTS.md).
-6. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
+6. Feito. Aprendizado (`internal/tech/`, `cmd/dante/learn.go`): /tecnologias e `dante tecnologias`
+   (manifestos + código, sem tokens; catálogo em `internal/tech/catalog.go`), /trilha NOME,
+   /oque TERMO e `i` no Visualizador (perguntas à parte com o contexto montado pelo dante).
 Em paralelo, feito: `dante eval` (`cmd/dante/eval.go`), perguntas de teste pelo caminho do chat
 (tokens, rota, tarefa, formato; `--sem-ia` sem tokens).
 
@@ -64,6 +66,7 @@ Em paralelo, feito: `dante eval` (`cmd/dante/eval.go`), perguntas de teste pelo 
   presas à pasta do repositório.
 - `internal/mapa/` mapa do projeto (/mapa): varredura, resumo por pasta com um modelo
   barato, visão geral, salvamento incremental por hash de pasta. Sem dependência da interface.
+- `internal/tech/` tecnologias do projeto (manifestos, linguagens, onde cada uma é usada).
 - `internal/config/` provedores, último modelo, repositórios confiados; chaves em
   `credenciais.json` (0600).
 

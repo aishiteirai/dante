@@ -430,6 +430,16 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		return m.startPRDescription()
 	}
+	if f := fold(text); f == "/tecnologias" || f == "/stack" {
+		m.input.Reset()
+		return m.withTechs(true, "")
+	}
+	if f := fold(text); f == "/trilha" || strings.HasPrefix(f, "/trilha ") || f == "/oque" || strings.HasPrefix(f, "/oque ") {
+		cmd := strings.TrimPrefix(strings.Fields(f)[0], "/")
+		arg := strings.TrimSpace(text[len(strings.Fields(text)[0]):])
+		m.input.Reset()
+		return m.withTechs(false, cmd+":"+arg)
+	}
 	if f := fold(text); f == "/corrigir" || f == "/pedido" {
 		m.input.Reset()
 		m.copyFixRequest(m.allFindings())

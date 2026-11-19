@@ -420,7 +420,8 @@ Exemplo de GitHub Actions:
   ler. `p` volta aos commits.
 - **Aba Arquivo (`v` no diff ou no Navegador):** o arquivo inteiro na versão do alvo, com as
   linhas alteradas marcadas na margem (`▎`). `n`/`N` andam entre as mudanças, `/` busca (e aí
-  `n`/`N` andam entre os resultados), `:` vai para uma linha, e clique + `f` explica a função.
+  `n`/`N` andam entre os resultados), `:` vai para uma linha, e clique + `f` explica a função
+  (`i` explica o que é a construção da linha).
 - **`/onde <tarefa>`:** "onde mexo para fazer isto?". O modelo sugere termos de busca (uma
   pergunta pequena, porque a tarefa vem em português e o código costuma estar em inglês), o
   dante procura no código sem gastar tokens e manda os trechos mais relevantes. A resposta diz
@@ -463,6 +464,28 @@ funções do projeto que ela chama. A pergunta vai numa conversa à parte, sem f
 sem o histórico do chat: costuma ficar entre 1 e 3 mil tokens. A resposta diz o que a função
 faz, como funciona, onde é usada e os cuidados, com referências `[n]` para abrir as linhas.
 A conversa principal continua como estava.
+
+### Aprender pelo projeto
+
+Para aprender as tecnologias do projeto usando o próprio código como material:
+
+- **`/tecnologias`** (ou `dante tecnologias`, ou a ferramenta MCP `dante_tecnologias`): o que
+  o projeto usa, lido dos manifestos (`go.mod`, `package.json`, `pyproject.toml`,
+  `requirements.txt`, `Cargo.toml`, `Gemfile`) e do código, **sem tokens**. Mostra as
+  linguagens, e cada framework e biblioteca conhecida com uma frase sobre o que ela é e em
+  quantos arquivos aparece; as outras dependências vão só pelo nome.
+- **`/trilha NOME`**, por exemplo `/trilha bubble tea` ou `/trilha react`: um roteiro para
+  aprender a tecnologia lendo este projeto. O dante escolhe os arquivos que mais a usam e
+  junta o esqueleto de cada um e as linhas onde ela aparece; o modelo devolve os conceitos
+  centrais, de 4 a 7 passos do mais simples ao mais completo (cada um com o arquivo e a
+  linha para abrir) e um exercício pequeno para fazer no projeto.
+- **`/oque TERMO`**, por exemplo `/oque goroutine` ou `/oque useEffect`: o que é aquilo, com
+  exemplos achados no projeto. Colar um trecho depois de `/oque` também funciona.
+- **`i` no Visualizador:** clique numa linha e aperte `i` para saber o que é a construção dela
+  (uma sintaxe, uma chamada de biblioteca), com as linhas em volta como contexto.
+
+As três últimas vão numa pergunta à parte, sem ferramentas e sem o histórico do chat (de 1 a
+4 mil tokens), e funcionam melhor com `/aprendiz`.
 
 ### Mapa do projeto e tour
 
@@ -676,6 +699,7 @@ Veja `revisor --help`. O histórico dela fica em `~/.local/share/dante/historico
 cmd/dante/        interface (Bubble Tea): telas, painéis, chat
 internal/llm/     provedores: Anthropic (SDK oficial) e compatível com OpenAI; laço de ferramentas
 internal/repo/    git (log, arquivos, diffs) e ferramentas de leitura do modelo
+internal/tech/    tecnologias do projeto (manifestos e uso no código)
 internal/config/  configuração de provedores
 revisor/          CLI opcional em Python
 ```

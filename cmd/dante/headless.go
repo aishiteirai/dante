@@ -16,6 +16,7 @@ import (
 	"github.com/aishiteirai/dante/internal/config"
 	"github.com/aishiteirai/dante/internal/llm"
 	"github.com/aishiteirai/dante/internal/repo"
+	"github.com/aishiteirai/dante/internal/tech"
 )
 
 // Comandos sem interface: dante review, check, explain, ask e hook. Usam a mesma montagem
@@ -36,6 +37,7 @@ const headlessUsage = `Comandos sem interface:
   dante mcp                    servidor MCP (contexto do repositório para o Claude Code e afins)
   dante mcp instalar           registra o servidor no .mcp.json deste repositório
   dante regras [--salvar]      rascunho do CLAUDE.md do projeto (com --salvar, grava)
+  dante tecnologias            o que o projeto usa (linguagens, frameworks, bibliotecas), sem tokens
   dante modelos [provedor]     os modelos do provedor, para usar em --modelo (sem provedor: o último usado)
   dante eval [alvo] [ARQ.json] perguntas de teste: tokens, rota, tarefa e formato das respostas
       --sem-ia                 só a rota e o tamanho do pedido, sem gastar tokens
@@ -48,7 +50,7 @@ const headlessUsage = `Comandos sem interface:
 `
 
 var headlessCmds = map[string]bool{"review": true, "revisar": true, "check": true, "verificar": true, "explain": true,
-	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true, "eval": true, "modelos": true}
+	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true, "eval": true, "modelos": true, "tecnologias": true}
 
 // runHeadless roda um comando sem interface e devolve o código de saída.
 func runHeadless(cfg config.Config, args []string) int {
@@ -120,6 +122,9 @@ func runHeadless(cfg config.Config, args []string) int {
 		if *ci && len(issues) > 0 {
 			return 1
 		}
+		return 0
+	case "tecnologias":
+		fmt.Println(tech.Detect(m.repo.Root).Markdown())
 		return 0
 	case "eval":
 		if len(rest) > 0 && looksLikeTarget(rest[0]) {
@@ -226,7 +231,7 @@ func headlessModel(cfg config.Config, modelFlag, arg, cmd string) (model, error)
 	// Alvo: o pedido, ou as mudanças locais, ou a branch atual × main, ou o último commit.
 	target := ""
 	switch {
-	case cmd != "ask" && cmd != "perguntar" && cmd != "eval" && cmd != "explain" && cmd != "explicar" && cmd != "regras" && arg != "":
+	case cmd != "ask" && cmd != "perguntar" && cmd != "eval" && cmd != "tecnologias" && cmd != "explain" && cmd != "explicar" && cmd != "regras" && arg != "":
 		target = arg
 	case cmd == "ask" || cmd == "perguntar" || cmd == "eval":
 		if looksLikeTarget(arg) {
