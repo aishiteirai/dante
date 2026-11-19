@@ -644,3 +644,7 @@ revisor/          CLI opcional em Python
 make test       # testes Go (provedores testados contra servidores falsos)
 make test-cli   # testes da CLI Python
 ```
+
+## Licença
+
+[MIT](LICENSE): use, copie, modifique e distribua à vontade, mantendo o aviso de copyright.

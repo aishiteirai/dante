@@ -250,9 +250,7 @@ func (r Repo) callees(sha, body, self, file string) []Usage {
 		if len(out) >= maxCallees {
 			break
 		}
-		pat := `(func\s+(\([^)]*\)\s*)?|def\s+|function\s+|fn\s+|fun\s+)` + regexp.QuoteMeta(c.name) + `\b|(const|let|var)\s+` +
-			regexp.QuoteMeta(c.name) + `\s*=`
-		res, _ := r.git(grepArgs(sha, pat)...)
+		res, _ := r.git(grepArgs(sha, declGrep(c.name, false))...)
 		var best *Usage
 		for _, l := range strings.Split(strings.TrimSpace(res), "\n") {
 			if sha != WorkTree {
@@ -280,6 +278,18 @@ func (r Repo) callees(sha, body, self, file string) []Usage {
 	return out
 }
 
+// declGrep é o padrão (POSIX ERE) que acha a declaração de uma função pelo nome. Só POSIX:
+// o git grep -E do macOS usa o regex do sistema, sem \s nem \b (extensões do GNU).
+func declGrep(name string, withClass bool) string {
+	sp, end := `[[:space:]]`, `([^A-Za-z0-9_]|$)`
+	n := regexp.QuoteMeta(name)
+	kinds := `func` + sp + `+(\([^)]*\)` + sp + `*)?|def` + sp + `+|function` + sp + `+|fn` + sp + `+|fun` + sp + `+`
+	if withClass {
+		kinds += `|class` + sp + `+`
+	}
+	return `(` + kinds + `)` + n + end + `|(const|let|var)` + sp + `+` + n + sp + `*=`
+}
+
 // grepArgs monta um git grep no alvo: num commit, procura nele; no disco, inclui os
 // arquivos novos ainda não versionados.
 func grepArgs(sha, pattern string, opts ...string) []string {
@@ -297,9 +307,7 @@ func grepArgs(sha, pattern string, opts ...string) []string {
 // FindFunc acha onde uma função está declarada (arquivo e linha), para quando o usuário
 // cola o código ou só o nome. Prefere código a testes.
 func (r Repo) FindFunc(sha, name string) (string, int, bool) {
-	pat := `(func\s+(\([^)]*\)\s*)?|def\s+|function\s+|fn\s+|fun\s+|class\s+)` + regexp.QuoteMeta(name) + `\b|(const|let|var)\s+` +
-		regexp.QuoteMeta(name) + `\s*=`
-	out, _ := r.git(grepArgs(sha, pat)...)
+	out, _ := r.git(grepArgs(sha, declGrep(name, true))...)
 	var best Usage
 	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
 		if sha != WorkTree {

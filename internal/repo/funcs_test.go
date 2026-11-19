@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -89,5 +90,25 @@ func TestLocate(t *testing.T) {
 	}
 	if us := r.FileUsers(WorkTree, "orders/list.go", 5); len(us) != 0 {
 		t.Fatalf("ninguém importa a pasta orders: %+v", us)
+	}
+}
+
+// Os padrões do git grep -E precisam ser POSIX: no macOS não há \s, \b, \w nem \d.
+func TestPadroesDoGrepSaoPOSIX(t *testing.T) {
+	for _, p := range []string{declGrep("Somar", true), declGrep("x", false)} {
+		for _, gnu := range []string{`\s`, `\b`, `\w`, `\d`} {
+			if strings.Contains(p, gnu) {
+				t.Errorf("padrão com %s (só GNU): %s", gnu, p)
+			}
+		}
+	}
+	re := regexp.MustCompile(declGrep("Somar", true))
+	for _, l := range []string{"func Somar(a int)", "func (c *Calc) Somar(", "def Somar(x):", "const Somar = (a) =>", "class Somar:"} {
+		if !re.MatchString(l) {
+			t.Errorf("deveria achar %q", l)
+		}
+	}
+	if re.MatchString("func SomarTudo(") {
+		t.Error("não deveria achar SomarTudo")
 	}
 }

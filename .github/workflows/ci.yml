@@ -1,0 +1,45 @@
+# Roda go vet e go test a cada PR e a cada push na main, em Linux, macOS e Windows.
+# (Publicar versões é com o workflow release, por tag.)
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: go (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # Windows ainda não foi validado: o job roda e mostra o resultado, mas não barra o PR.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # Os testes criam repositórios git temporários e commits.
+      - name: Configura o git
+        run: |
+          git config --global user.name "dante ci"
+          git config --global user.email "ci@dante.invalid"
+          git config --global init.defaultBranch main
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
