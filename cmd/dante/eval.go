@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/aishiteirai/dante/internal/config"
 	"github.com/aishiteirai/dante/internal/llm"
 	"github.com/aishiteirai/dante/internal/repo"
 )
@@ -121,10 +125,10 @@ func runEval(base model, path string, noAI, asJSON bool) int {
 	if !noAI {
 		who = base.prov.ID + "/" + base.modelName
 	}
-	fmt.Fprintf(os.Stderr, "dante: %d perguntas (%s) em %s · %s\n", len(cases), from, targetName(base.target), who)
+	fmt.Fprintf(os.Stderr, "dante: %d perguntas (%s) · alvo: %s · %s\n", len(cases), from, targetName(base.target), who)
 
 	var results []evalResult
-	failed := 0
+	failed, unavailable := 0, 0
 	for _, c := range cases {
 		m := base
 		m.chat = nil
@@ -149,6 +153,28 @@ func runEval(base model, path string, noAI, asJSON bool) int {
 				rr, err = sendHeadless(m, m.chat, prompt, false)
 			}
 			r.Segundos = time.Since(start).Round(100 * time.Millisecond).Seconds()
+			if errors.Is(err, llm.ErrModelNotFound) || errors.Is(err, llm.ErrInvalidKey) {
+				// Vale para todas as perguntas: para aqui, sem repetir o erro seis vezes.
+				fmt.Fprintln(os.Stderr, "dante:", err)
+				if errors.Is(err, llm.ErrModelNotFound) {
+					if s := similarModels(m.prov, m.modelName); len(s) > 0 {
+						fmt.Fprintf(os.Stderr, "\nModelos parecidos em %s:\n  %s/%s\n", m.prov.Nome, m.prov.ID,
+							strings.Join(s, "\n  "+m.prov.ID+"/"))
+					}
+					fmt.Fprintln(os.Stderr, "\nPara ver todos: dante modelos "+m.prov.ID)
+				}
+				return 2
+			}
+			if errors.Is(err, llm.ErrUnavailable) {
+				unavailable++
+			} else {
+				unavailable = 0
+			}
+			if unavailable >= 2 { // duas perguntas seguidas sem resposta: não adianta seguir agora
+				fmt.Fprintln(os.Stderr, "dante:", err)
+				fmt.Fprintln(os.Stderr, "dante: o provedor não está respondendo; tente de novo em alguns minutos ou use outro modelo (dante modelos)")
+				return 2
+			}
 			if err != nil {
 				r.Falhas = append(r.Falhas, "erro: "+err.Error())
 			}
@@ -255,4 +281,42 @@ func printEvalSummary(rs []evalResult, failed int, noAI bool) {
 		s += fmt.Sprintf(" · total: entrada %s (cache %s), saída %s", humanTokens(in), humanTokens(cache), humanTokens(out))
 	}
 	fmt.Println(s)
+}
+
+// similarModels lista os modelos do provedor com o nome mais parecido com o pedido (mesma
+// família e mesmo tipo, como "gemini" e "flash"), para corrigir um nome digitado errado.
+func similarModels(p config.Provider, name string) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	all, err := llm.ListModels(ctx, p.LLM(), "")
+	if err != nil {
+		return nil
+	}
+	return rankSimilar(all, name, 6)
+}
+
+func rankSimilar(all []string, name string, n int) []string {
+	parts := strings.FieldsFunc(strings.ToLower(name), func(r rune) bool { return r == '-' || r == '/' || r == ':' || r == '.' })
+	type scored struct {
+		id string
+		s  int
+	}
+	var ss []scored
+	for _, id := range all {
+		l, s := strings.ToLower(id), 0
+		for _, p := range parts {
+			if len(p) > 1 && strings.Contains(l, p) {
+				s += len(p)
+			}
+		}
+		if s > 0 {
+			ss = append(ss, scored{id, s})
+		}
+	}
+	sort.SliceStable(ss, func(i, j int) bool { return ss[i].s > ss[j].s })
+	var out []string
+	for i := 0; i < len(ss) && i < n; i++ {
+		out = append(out, ss[i].id)
+	}
+	return out
 }

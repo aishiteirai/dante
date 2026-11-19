@@ -598,6 +598,11 @@ dante eval --sem-ia                                 # só rota e tamanho do pedi
 dante eval main...feat/x casos.json --json > a.json # alvo e perguntas próprios, saída em JSON
 ```
 
+Os nomes que valem em `--modelo` aparecem com `dante modelos gemini` (ou outro provedor; sem
+provedor, o do último modelo usado). Com um modelo que não existe ou uma chave recusada, o eval
+para na primeira pergunta e sugere nomes parecidos; com o provedor sobrecarregado em duas
+perguntas seguidas, para e pede para tentar mais tarde.
+
 Sem arquivo, vale o `.dante/eval.json` do repositório ou, sem ele, um conjunto padrão
 ("oi", "valeu!", uma pergunta solta, "do que se trata este projeto?", "revise as mudanças",
 "/rapido o que mudou?"). Cada pergunta é uma conversa nova. O formato:
