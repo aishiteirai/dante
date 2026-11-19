@@ -438,6 +438,10 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	if !strings.HasPrefix(text, "/") && asksAboutPastedFunc(text) {
 		return m.explainFuncText(text)
 	}
+	if scope == "" && !strings.HasPrefix(text, "/") && isSmallTalk(text) && !m.modelAsked() {
+		m.input.Reset()
+		return m.askIsolated(smallTalkSystem, text, text, "")
+	}
 	// Comandos de modo no começo da mensagem; sem eles, a detecção pelo pedido.
 	cmds, rest, unknown := parseCommands(text)
 	if unknown != "" {
@@ -1131,3 +1135,17 @@ func chatStyle(dark bool) ansi.StyleConfig {
 }
 
 func boolP(b bool) *bool { return &b }
+
+// modelAsked diz se a última resposta do modelo terminou em pergunta: aí a próxima mensagem
+// pode ser a resposta dela e precisa da conversa, mesmo que pareça um cumprimento.
+func (m model) modelAsked() bool {
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		switch m.entries[i].kind {
+		case eAssistant:
+			return strings.HasSuffix(strings.TrimSpace(m.entries[i].text), "?")
+		case eUser:
+			return false
+		}
+	}
+	return false
+}

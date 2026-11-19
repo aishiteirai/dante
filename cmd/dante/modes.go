@@ -239,3 +239,36 @@ func commandSuggestions(input string) []chatCommand {
 	}
 	return out
 }
+
+// Cumprimentos e agradecimentos ("oi", "bom dia", "valeu!") não precisam do repositório:
+// vão num pedido avulso, sem ferramentas, diretrizes nem mapa, que custa algumas centenas
+// de tokens em vez de milhares, e não entram no histórico da conversa. Confirmações ("ok",
+// "pode", "certo") ficam de fora: podem ser a resposta a uma pergunta do modelo.
+var smallTalkWords = map[string]bool{}
+
+func init() {
+	for _, w := range strings.Fields("oi oie ola opa salve hey hi hello e ai eai eae fala bom boa dia tarde noite tudo bem " +
+		"como vai voce vc tranquilo tranquila " +
+		"obrigado obrigada brigado valeu vlw thanks thx tchau ate mais logo dante") {
+		smallTalkWords[w] = true
+	}
+}
+
+func isSmallTalk(text string) bool {
+	words := strings.FieldsFunc(fold(text), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	if len(words) == 0 || len(words) > 6 {
+		return false
+	}
+	for _, w := range words {
+		if !smallTalkWords[w] {
+			return false
+		}
+	}
+	return true
+}
+
+const smallTalkSystem = "Você é o dante, um revisor de código no terminal. A pessoa mandou um cumprimento ou " +
+	"agradecimento, sem pergunta. Responda em português, numa frase curta e cordial, e, se for um cumprimento, diga em " +
+	"uma linha o que você pode fazer: revisar as mudanças (tecla r), explicar o código, dizer onde mexer (/onde)."

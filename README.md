@@ -278,8 +278,9 @@ Opções: `dante --repo CAMINHO_OU_URL` abre direto o repositório, e
 ### Revisar ou explicar
 
 Por padrão, o chat **conversa**: responde só ao que foi perguntado, sem revisão nem análise
-que você não pediu (um "oi" recebe um "oi" e as opções), e sem mandar o diff junto, o que
-economiza tokens; o modelo lê o código quando precisa. Revisar e explicar valem para a
+que você não pediu, e sem mandar o diff junto, o que economiza tokens; o modelo lê o código
+quando precisa. Cumprimentos e agradecimentos ("oi", "bom dia", "valeu") vão numa pergunta à
+parte, sem ferramentas nem contexto do repositório: algumas centenas de tokens em vez de milhares. Revisar e explicar valem para a
 mensagem em que você pede, por comando ou pelas palavras do pedido, e o formato (normal,
 aprendiz, rápido) fica até você trocar. O modo atual aparece no título do chat.
 
