@@ -21,13 +21,16 @@ const (
 	KindTest
 	KindDoc
 	KindGenerated
+	KindTemp // arquivo temporário de editor ou de merge (.swp, ~, .orig): nunca vale revisar
 )
 
-var kindWords = map[FileKind]string{KindCode: "código", KindTest: "teste", KindDoc: "documentação", KindGenerated: "gerado"}
+var kindWords = map[FileKind]string{KindCode: "código", KindTest: "teste", KindDoc: "documentação", KindGenerated: "gerado",
+	KindTemp: "temporário do editor"}
 
 var (
 	testName = regexp.MustCompile(`(_test\.go|_test\.py|\.test\.[a-z]+|\.spec\.[a-z]+|Tests?\.(java|kt|cs|swift|php))$|^test_.*\.py$`)
 	genName  = regexp.MustCompile(`(\.min\.(js|css)|\.pb\.go|_generated\.[a-z]+|\.generated\.[a-z]+|\.snap|\.lock|\.map)$`)
+	tempName = regexp.MustCompile(`(\.sw[a-p]|~|\.orig|\.rej|\.bak|\.tmp)$|^\.#|^#.*#$|^\.DS_Store$`)
 	docExt   = map[string]bool{".md": true, ".rst": true, ".txt": true, ".adoc": true}
 	locks    = map[string]bool{"go.sum": true, "package-lock.json": true, "yarn.lock": true, "pnpm-lock.yaml": true,
 		"Cargo.lock": true, "poetry.lock": true, "Gemfile.lock": true, "composer.lock": true, "uv.lock": true}
@@ -38,6 +41,8 @@ func Kind(p string) FileKind {
 	base := path.Base(p)
 	dirs := "/" + path.Dir(p) + "/"
 	switch {
+	case tempName.MatchString(base):
+		return KindTemp
 	case locks[base] || genName.MatchString(base) || strings.Contains(dirs, "/vendor/") || strings.Contains(dirs, "/dist/"):
 		return KindGenerated
 	case testName.MatchString(base) || strings.Contains(dirs, "/test/") || strings.Contains(dirs, "/tests/") ||
@@ -162,7 +167,7 @@ func (r Repo) ReviewDiff(sha string, limit int) (ReviewPack, error) {
 			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "sem diff de texto", nil})
 		case blank[f.Path]:
 			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, "só espaços ou indentação", nil})
-		case k == KindGenerated || (hasCode && k != KindCode):
+		case k == KindGenerated || k == KindTemp || (hasCode && k != KindCode):
 			pack.Left = append(pack.Left, LeftOut{f.Path, f.Add, f.Del, kindWords[k], nil})
 		default:
 			cands = append(cands, f)

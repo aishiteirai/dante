@@ -199,9 +199,16 @@ func (m model) contextBlock() string {
 			fmt.Fprintf(&b, "Este commit não é o HEAD: para ver os arquivos como estavam nele, use read_file com ref=%s.\n", shortSHA(m.target))
 		}
 	}
-	if len(m.files) > 0 {
-		fmt.Fprintf(&b, "Arquivos alterados no alvo (%d):\n", len(m.files))
-		for i, f := range m.files {
+	// Temporários de editor (.swp, ~, .orig) ficam fora: não são mudança de verdade.
+	var files []repo.FileChange
+	for _, f := range m.files {
+		if repo.Kind(f.Path) != repo.KindTemp {
+			files = append(files, f)
+		}
+	}
+	if len(files) > 0 {
+		fmt.Fprintf(&b, "Arquivos alterados no alvo (%d):\n", len(files))
+		for i, f := range files {
 			if i == 80 {
 				fmt.Fprintf(&b, "  … e mais %d\n", len(m.files)-80)
 				break
