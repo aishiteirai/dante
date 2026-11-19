@@ -448,7 +448,7 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		m.setErr("comando desconhecido: " + unknown + " · digite / para ver os comandos")
 		return m, nil
 	}
-	t, l := cmds.task, cmds.level
+	t, l, explicit := messageTask(cmds, rest)
 	if cmds.agent != nil && *cmds.agent != m.agent {
 		m.setAgent(*cmds.agent)
 		note := "permissão: ler · o modelo não altera arquivos"
@@ -467,21 +467,9 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		}
 		return m.startTour()
 	}
-	explicit := t != nil || l != nil
-	if !explicit {
-		t, l = detectMode(rest)
-	}
-	// A tarefa vale para esta mensagem: o que o pedido indicar (comando ou palavras) ou, sem
-	// sinal, conversar. Assim um "oi" ou uma pergunta solta não vira uma revisão.
 	before := modeLabel(m.task, m.level)
-	if t == nil {
-		v := taskConversar
-		t = &v
-	}
 	conversaAgora := *t == taskConversar && m.task != taskConversar
-	if t != nil {
-		m.task = *t
-	}
+	m.task = *t
 	if l != nil {
 		m.level = *l
 	}
@@ -512,13 +500,7 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	if m.checkBlock != "" && !m.checkSent && m.task == taskRevisar {
 		checkBlock, m.checkSent = m.checkBlock, true
 	}
-	// Na conversa, o diff não vai junto (o modelo pede se precisar): economiza tokens e não
-	// convida a uma revisão que não foi pedida.
-	diff := ""
-	if m.task != taskConversar || scope != "" {
-		diff = m.diffBlock(scope)
-	}
-	prompt := m.contextBlock() + diff + checkBlock + modeBlock(m.task, m.level, m.agentBlock()) + text
+	prompt := m.turnPrompt(text, scope, checkBlock)
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""
@@ -1148,4 +1130,30 @@ func (m model) modelAsked() bool {
 		}
 	}
 	return false
+}
+
+// messageTask é a tarefa e o nível de uma mensagem: os dos comandos ou, sem eles, os das
+// palavras do pedido. Sem sinal, conversar: um "oi" ou uma pergunta solta não vira revisão.
+// explicit diz se vieram de comandos.
+func messageTask(c cmdSet, rest string) (t *taskMode, l *levelMode, explicit bool) {
+	t, l = c.task, c.level
+	explicit = t != nil || l != nil
+	if !explicit {
+		t, l = detectMode(rest)
+	}
+	if t == nil {
+		v := taskConversar
+		t = &v
+	}
+	return t, l, explicit
+}
+
+// turnPrompt monta a mensagem que vai ao modelo. Na conversa, o diff não vai junto (o modelo
+// pede se precisar): economiza tokens e não convida a uma revisão que não foi pedida.
+func (m *model) turnPrompt(text, scope, checkBlock string) string {
+	diff := ""
+	if m.task != taskConversar || scope != "" {
+		diff = m.diffBlock(scope)
+	}
+	return m.contextBlock() + diff + checkBlock + modeBlock(m.task, m.level, m.agentBlock()) + text
 }
