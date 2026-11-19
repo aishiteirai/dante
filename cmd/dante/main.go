@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/aishiteirai/dante/internal/config"
 	"github.com/aishiteirai/dante/internal/llm"
@@ -16,6 +18,7 @@ import (
 var version = "dev"
 
 func main() {
+	version = buildVersion(version)
 	// Comandos sem interface (review, check, explain, ask, hook): para scripts, o hook do
 	// Claude Code e o CI.
 	if len(os.Args) > 1 && headlessCmds[os.Args[1]] {
@@ -65,4 +68,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Erro:", err)
 		os.Exit(1)
 	}
+}
+
+// buildVersion completa a versão "dev" (sem -ldflags, como no go install @main) com o que o
+// Go grava no binário: a pseudo-versão do módulo, ou o commit de um clone local.
+func buildVersion(v string) string {
+	if v != "dev" {
+		return v
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return v
+	}
+	if mv := bi.Main.Version; mv != "" && mv != "(devel)" {
+		return mv
+	}
+	rev, dirty := "", false
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	if rev == "" {
+		return v
+	}
+	v += " (" + rev
+	if dirty {
+		v += ", com mudanças locais"
+	}
+	return strings.TrimSpace(v) + ")"
 }
