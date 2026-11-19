@@ -36,6 +36,7 @@ const headlessUsage = `Comandos sem interface:
   dante mcp                    servidor MCP (contexto do repositório para o Claude Code e afins)
   dante mcp instalar           registra o servidor no .mcp.json deste repositório
   dante regras [--salvar]      rascunho do CLAUDE.md do projeto (com --salvar, grava)
+  dante modelos [provedor]     os modelos do provedor, para usar em --modelo (sem provedor: o último usado)
   dante eval [alvo] [ARQ.json] perguntas de teste: tokens, rota, tarefa e formato das respostas
       --sem-ia                 só a rota e o tamanho do pedido, sem gastar tokens
       --json                   resultados em JSON (para comparar modelos)
@@ -47,7 +48,7 @@ const headlessUsage = `Comandos sem interface:
 `
 
 var headlessCmds = map[string]bool{"review": true, "revisar": true, "check": true, "verificar": true, "explain": true,
-	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true, "eval": true}
+	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true, "eval": true, "modelos": true}
 
 // runHeadless roda um comando sem interface e devolve o código de saída.
 func runHeadless(cfg config.Config, args []string) int {
@@ -69,6 +70,9 @@ func runHeadless(cfg config.Config, args []string) int {
 	}
 	rest := fs.Args()
 
+	if cmd == "modelos" {
+		return runModelos(cfg, rest)
+	}
 	if cmd == "mcp" {
 		if len(rest) > 0 && (rest[0] == "instalar" || rest[0] == "install") {
 			return installMCP()

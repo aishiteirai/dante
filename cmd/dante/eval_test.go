@@ -102,3 +102,52 @@ func TestEvalComModelo(t *testing.T) {
 		t.Fatalf("o cumprimento deveria ir com o prompt curto: %q", systems)
 	}
 }
+
+func TestModelosParecidos(t *testing.T) {
+	all := []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemma-3-27b-it", "text-embedding-004"}
+	got := rankSimilar(all, "gemini-2.8-flash", 2)
+	if len(got) != 2 || got[0] != "gemini-2.5-flash" && got[0] != "gemini-2.5-flash-lite" {
+		t.Fatalf("parecidos = %v", got)
+	}
+}
+
+// Modelo inexistente: o eval para na primeira pergunta, com código 2.
+func TestEvalModeloInexistente(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	t.Setenv("FALSO_KEY", "k")
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			fmt.Fprint(w, `{"data":[{"id":"gemini-2.5-flash"}]}`)
+			return
+		}
+		calls++
+		w.WriteHeader(404)
+		fmt.Fprint(w, `{"error":{"message":"models/gemini-2.8-flash is not found"}}`)
+	}))
+	defer srv.Close()
+	m := newModel(config.Defaults(), "", "")
+	m.repo = gitRepo(t)
+	m.prov = config.Provider{ID: "falso", Nome: "falso", Tipo: llm.KindOpenAI, URL: srv.URL, ChaveEnv: "FALSO_KEY"}
+	m.modelName = "gemini-2.8-flash"
+	if code := runEval(m, "", false, false); code != 2 || calls != 1 {
+		t.Fatalf("código %d, %d chamadas", code, calls)
+	}
+}
+
+func TestComandoModelos(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"models/gemini-3.8-flash"},{"id":"models/gemini-3.8-pro"}]}`)
+	}))
+	defer srv.Close()
+	cfg := config.Defaults()
+	cfg.Provedores = append(cfg.Provedores, config.Provider{ID: "falso", Nome: "falso", Tipo: llm.KindOpenAI, URL: srv.URL,
+		Listar: true, Local: true})
+	if code := runModelos(cfg, []string{"falso"}); code != 0 {
+		t.Fatalf("código %d", code)
+	}
+	if code := runModelos(cfg, []string{"nao-existe"}); code != 2 {
+		t.Fatalf("provedor desconhecido: código %d", code)
+	}
+}

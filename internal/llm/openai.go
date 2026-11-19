@@ -411,22 +411,22 @@ func httpError(status int, body []byte, p Provider) error {
 		if p.APIKeyEnv != "" {
 			hint = fmt.Sprintf(" (defina %s)", p.APIKeyEnv)
 		}
-		return fmt.Errorf("chave de API recusada pelo provedor%s: %s", hint, msg)
+		return kindErr{ErrInvalidKey, fmt.Sprintf("chave de API recusada pelo provedor%s: %s", hint, msg)}
 	case 404:
 		// "This model models/X is no longer available… use models/Y" (Gemini).
 		if m := retiredModel.FindStringSubmatch(msg); m != nil {
-			return fmt.Errorf("o provedor descontinuou o modelo %s; ele sugere o %s (m troca o modelo)", m[1], m[2])
+			return kindErr{ErrModelNotFound, fmt.Sprintf("o provedor descontinuou o modelo %s; ele sugere o %s (m troca o modelo)", m[1], m[2])}
 		}
 		if strings.Contains(strings.ToLower(msg), "data policy") || strings.Contains(strings.ToLower(msg), "privacy") {
 			return fmt.Errorf("o OpenRouter bloqueou este modelo pela sua política de dados; os modelos grátis "+
 				"exigem liberar o uso dos dados em https://openrouter.ai/settings/privacy (%s)", msg)
 		}
-		return fmt.Errorf("modelo ou endpoint não encontrado: %s", msg)
+		return kindErr{ErrModelNotFound, "modelo ou endpoint não encontrado: " + msg}
 	case 429:
-		return fmt.Errorf("limite de requisições atingido: espere um pouco ou troque o modelo (m) · %s", msg)
+		return kindErr{ErrUnavailable, fmt.Sprintf("limite de requisições atingido: espere um pouco ou troque o modelo (m) · %s", msg)}
 	case 500, 502, 503, 504:
-		return fmt.Errorf("o provedor está sobrecarregado ou instável (HTTP %d): tente de novo em instantes ou troque "+
-			"o modelo (m); modelos menores, como os \"flash\", costumam estar mais livres · %s", status, msg)
+		return kindErr{ErrUnavailable, fmt.Sprintf("o provedor está sobrecarregado ou instável (HTTP %d): tente de novo em "+
+			"instantes ou troque o modelo (m); modelos menores, como os \"flash\", costumam estar mais livres · %s", status, msg)}
 	}
 	return fmt.Errorf("HTTP %d: %s", status, msg)
 }
