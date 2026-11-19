@@ -267,6 +267,9 @@ func (m *model) fixLogScroll() {
 func (m *model) fixFilesScroll() { m.fixLogScroll() }
 
 func (m model) viewLog(w, h int) string {
+	if m.navProject {
+		return m.viewProject(w, h)
+	}
 	if m.rows == nil {
 		return subtleStyle.Render("carregando…")
 	}

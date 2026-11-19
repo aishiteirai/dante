@@ -155,6 +155,10 @@ type model struct {
 	isolated    bool             // a resposta em andamento é uma pergunta avulsa (fora da conversa)
 	purpose     string           // o que fazer com a resposta avulsa ao terminar ("commits", "pr")
 	plan        *commitPlan      // plano de commits (/commits)
+	ftab        *fileTab         // aba Arquivo do Visualizador
+	navProject  bool             // Navegador mostrando o projeto inteiro (p)
+	proj        *projTree
+	fileInput   string // linha de busca (/…) ou de ir para a linha (:…) da aba Arquivo
 	planIdx     int
 	mapData     *mapa.Map // mapa do projeto salvo
 	mapGen      *mapState // confirmação ou geração do mapa em andamento
@@ -434,6 +438,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case approvalEditedMsg:
 		return m.onApprovalEdited(msg)
 
+	case projMsg:
+		return m.onProject(msg)
+
+	case filePackMsg:
+		return m.onFilePack(msg)
+
+	case locatePackMsg:
+		return m.onLocatePack(msg)
+
+	case fileTabMsg:
+		return m.onFileTab(msg)
+
 	case commitEditedMsg:
 		return m.onCommitEdited(msg)
 
@@ -645,6 +661,12 @@ func (m model) setFile(i int) (tea.Model, tea.Cmd) {
 // updateLogKeys: teclas do Navegador. ↑↓ andam por commits e, com o commit aberto, pelos
 // arquivos dele; → abre e ← fecha; enter num arquivo foca o diff.
 func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
+	if m.navProject {
+		return m.updateProjectKeys(key)
+	}
+	if key == "p" {
+		return m.toggleProject()
+	}
 	ready := m.filesFor == m.target && len(m.files) > 0
 	switch key {
 	case "esc":
@@ -722,6 +744,14 @@ func (m model) updateLogKeys(key string) (tea.Model, tea.Cmd) {
 			return m.quickReview(m.files[m.fileIdx].Path)
 		}
 		return m.quickReview("")
+	case "v": // o arquivo inteiro
+		if ready {
+			return m.openFileTab(m.files[m.fileIdx].Path, repo.Tip(m.target), 0)
+		}
+	case "x": // o que é este arquivo?
+		if ready && m.navFile {
+			return m.explainFile(m.files[m.fileIdx].Path, repo.Tip(m.target))
+		}
 	case "o", "e":
 		if ready {
 			f := m.files[m.fileIdx]

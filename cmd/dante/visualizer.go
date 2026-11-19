@@ -24,7 +24,8 @@ type vTab int
 const (
 	vtDiff vTab = iota
 	vtDoc
-	vtMap // mapa do projeto e tour
+	vtMap  // mapa do projeto e tour
+	vtFile // o arquivo inteiro
 )
 
 const (
@@ -94,6 +95,8 @@ func (m *model) renderPreview() {
 	switch {
 	case m.vtab == vtMap:
 		lines = m.renderMap(w)
+	case m.vtab == vtFile:
+		lines = m.renderFileTab(w)
 	case m.vtab == vtDoc && !m.docIsDiff:
 		for _, l := range strings.Split(strings.TrimRight(m.docRaw, "\n"), "\n") {
 			l = truncateW(expandTabs(l), w)
@@ -175,11 +178,18 @@ func (m model) tabsLabel() string {
 		}
 		return subtleStyle.Render(name)
 	}
-	return tab("Diff", m.vtab == vtDiff, true) + subtleStyle.Render(" · ") + tab("Documento", m.vtab == vtDoc, m.docRaw != "") +
+	return tab("Diff", m.vtab == vtDiff, true) + subtleStyle.Render(" · ") + tab("Arquivo", m.vtab == vtFile, m.ftab != nil) +
+		subtleStyle.Render(" · ") + tab("Documento", m.vtab == vtDoc, m.docRaw != "") +
 		subtleStyle.Render(" · ") + tab("Mapa", m.vtab == vtMap, m.mapData != nil || m.mapGen != nil)
 }
 
 func (m model) visualizerStatus() string {
+	if m.vtab == vtFile {
+		if m.ftab == nil {
+			return ""
+		}
+		return fmt.Sprintf("linha %d de %d", m.currentFileLine(), len(m.ftab.lines))
+	}
 	if m.vtab == vtMap {
 		if st := m.mapGen; st != nil && st.running {
 			return "gerando o mapa"
@@ -205,6 +215,8 @@ func (m model) visualizerHeader(w int) string {
 	switch {
 	case m.vtab == vtMap:
 		l1, l2 = m.mapHeader(w)
+	case m.vtab == vtFile:
+		l1, l2 = m.fileTabHeader(w)
 	case m.vtab == vtDoc:
 		l1 = boldStyle.Render(m.docTitle)
 		l2 = subtleStyle.Render("aberto pelo modelo · [ volta ao diff")
@@ -240,6 +252,11 @@ func (m model) visualizerHeader(w int) string {
 func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 	if m.vtab == vtMap {
 		if nm, cmd, ok := m.updateMapTabKeys(key); ok {
+			return nm, cmd
+		}
+	}
+	if m.vtab == vtFile {
+		if nm, cmd, ok := m.updateFileTabKeys(key); ok {
 			return nm, cmd
 		}
 	}
@@ -289,8 +306,11 @@ func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 			return m, m.previewSelected()
 		}
 	case "[", "]":
-		// Diff → Documento → Mapa, pulando as abas vazias.
+		// Diff → Arquivo → Documento → Mapa, pulando as abas vazias.
 		tabs := []vTab{vtDiff}
+		if m.ftab != nil {
+			tabs = append(tabs, vtFile)
+		}
 		if m.docRaw != "" {
 			tabs = append(tabs, vtDoc)
 		}
@@ -330,6 +350,8 @@ func (m model) updateDiffKeys(key string) (tea.Model, tea.Cmd) {
 			m.diffCtx = max((m.diffCtx-2)/2, defaultDiffCtx)
 			return m, m.previewSelected()
 		}
+	case "v": // o arquivo inteiro, na linha em que se estava
+		return m.viewFileOfDiff()
 	case "f": // explica a função da linha marcada (clique) ou do trecho atual
 		if p, ref, line, ok := m.funcLocation(); ok {
 			return m.explainFuncAt(p, ref, line)

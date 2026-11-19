@@ -187,6 +187,10 @@ func (m model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 
+	// A busca e o "ir para a linha" da aba Arquivo capturam todas as teclas.
+	if m.fileInput != "" && m.focus == pDiff {
+		return m.updateFileInput(k)
+	}
 	// Uma mudança esperando aprovação captura s/n/t/e/esc, de qualquer painel.
 	if m.approval != nil && m.mode == modeNormal {
 		if nm, cmd, ok := m.updateApprovalKeys(key); ok {

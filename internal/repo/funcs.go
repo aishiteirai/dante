@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -345,4 +346,120 @@ func isComment(l string) bool {
 		}
 	}
 	return false
+}
+
+// FileContent devolve as linhas do arquivo na versão do alvo (WorkTree = disco), com as
+// mesmas proteções das ferramentas: nada de arquivos sensíveis, e segredos mascarados.
+func (r Repo) FileContent(sha, p string) ([]string, error) { return r.content(sha, p) }
+
+// FileOutline devolve o esqueleto do arquivo (declarações com o número da linha).
+func FileOutline(p string, lines []string) string { return outline(p, lines) }
+
+// FileUsers lista onde outros arquivos citam este (pelo nome sem extensão, ou pela pasta
+// num import), para dizer quem usa um arquivo.
+func (r Repo) FileUsers(sha, p string, n int) []Usage {
+	name := strings.TrimSuffix(path.Base(p), path.Ext(p))
+	if len(name) < 3 {
+		return nil
+	}
+	pat := `(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(name) + `([^A-Za-z0-9_]|$)`
+	if d := path.Dir(p); d != "." && (path.Ext(p) == ".go") {
+		pat = `"[^"]*` + regexp.QuoteMeta(d) + `"` // Go importa a pasta, não o arquivo
+	}
+	out, _ := r.git(grepArgs(sha, pat)...)
+	var us []Usage
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if sha != WorkTree {
+			l = strings.TrimPrefix(l, sha+":")
+		}
+		parts := strings.SplitN(l, ":", 3)
+		if len(parts) < 3 || parts[0] == p || r.Blocked(parts[0]) || Kind(parts[0]) == KindDoc {
+			continue
+		}
+		var ln int
+		fmt.Sscan(parts[1], &ln)
+		us = append(us, Usage{Path: parts[0], Line: ln, Text: shorten(strings.TrimSpace(parts[2]), 120)})
+		if len(us) >= n {
+			break
+		}
+	}
+	return us
+}
+
+// Hit é um arquivo encontrado pela busca de Locate, com as linhas que bateram.
+type Hit struct {
+	Path  string
+	Score float64
+	Lines []Usage
+}
+
+// Locate procura os termos no código (sem diferenciar maiúsculas) e devolve os arquivos
+// mais relevantes: termos raros valem mais, o nome do arquivo conta, testes e docs valem
+// menos e gerados ficam de fora. Serve para "onde mexo para fazer X?" sem o modelo explorar.
+func (r Repo) Locate(terms []string, n int) []Hit {
+	type acc struct {
+		score float64
+		lines []Usage
+		seen  map[int]bool
+	}
+	files := map[string]*acc{}
+	for _, t := range terms {
+		t = strings.TrimSpace(t)
+		if len(t) < 3 {
+			continue
+		}
+		out, _ := r.git(grepArgs(WorkTree, regexp.QuoteMeta(t), "-i")...)
+		perFile := map[string][]Usage{}
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			parts := strings.SplitN(l, ":", 3)
+			if len(parts) < 3 || r.Blocked(parts[0]) || Kind(parts[0]) == KindGenerated {
+				continue
+			}
+			var ln int
+			fmt.Sscan(parts[1], &ln)
+			perFile[parts[0]] = append(perFile[parts[0]], Usage{Path: parts[0], Line: ln, Text: shorten(strings.TrimSpace(parts[2]), 120)})
+		}
+		if len(perFile) == 0 || len(perFile) > 80 { // comum demais para ajudar
+			continue
+		}
+		weight := 1.0 / (1.0 + float64(len(perFile))/5)
+		for p, us := range perFile {
+			a := files[p]
+			if a == nil {
+				a = &acc{seen: map[int]bool{}}
+				files[p] = a
+			}
+			s := weight * float64(min(len(us), 3))
+			if strings.Contains(strings.ToLower(p), strings.ToLower(t)) {
+				s += weight
+			}
+			switch Kind(p) {
+			case KindTest:
+				s *= 0.5
+			case KindDoc:
+				s *= 0.3
+			}
+			a.score += s
+			// Linhas de declaração primeiro: dizem mais que um uso qualquer.
+			sort.SliceStable(us, func(i, j int) bool { return declOf(us[i].Text) != "" && declOf(us[j].Text) == "" })
+			for _, u := range us[:min(len(us), 2)] {
+				if !a.seen[u.Line] {
+					a.seen[u.Line] = true
+					a.lines = append(a.lines, u)
+				}
+			}
+		}
+	}
+	var hits []Hit
+	for p, a := range files {
+		sort.Slice(a.lines, func(i, j int) bool { return a.lines[i].Line < a.lines[j].Line })
+		hits = append(hits, Hit{Path: p, Score: a.score, Lines: a.lines[:min(len(a.lines), 5)]})
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].Score != hits[j].Score {
+			return hits[i].Score > hits[j].Score
+		}
+		return hits[i].Path < hits[j].Path
+	})
+	return hits[:min(len(hits), n)]
 }
