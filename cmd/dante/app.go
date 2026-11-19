@@ -218,6 +218,7 @@ func newModel(cfg config.Config, repoFlag, modelFlag string) model {
 		lay:       loadLayout(),
 		diffCtx:   defaultDiffCtx,
 		navOpen:   true,
+		task:      taskConversar,
 		packed:    newPackedDiffs(),
 	}
 	switch {
