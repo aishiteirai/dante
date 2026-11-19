@@ -303,6 +303,26 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
 
+### Chegando num projeto novo
+
+- **Explorador (`p` no Navegador):** troca os commits pela árvore do projeto inteiro. `→`
+  abre uma pasta, e ao andar pelos arquivos cada um aparece na aba **Arquivo**. `x` explica o
+  arquivo: para que serve, as peças principais com a linha de cada uma, quem usa e por onde
+  ler. `p` volta aos commits.
+- **Aba Arquivo (`v` no diff ou no Navegador):** o arquivo inteiro na versão do alvo, com as
+  linhas alteradas marcadas na margem (`▎`). `n`/`N` andam entre as mudanças, `/` busca (e aí
+  `n`/`N` andam entre os resultados), `:` vai para uma linha, e clique + `f` explica a função.
+- **`/onde <tarefa>`:** "onde mexo para fazer isto?". O modelo sugere termos de busca (uma
+  pergunta pequena, porque a tarefa vem em português e o código costuma estar em inglês), o
+  dante procura no código sem gastar tokens e manda os trechos mais relevantes. A resposta diz
+  onde mexer, na ordem de leitura, o que já existe parecido e os cuidados, e traz um
+  **briefing pronto para colar no Claude**, que já vai para a área de transferência e para
+  `~/.local/share/dante/pedidos/briefing.md`.
+- **`/como <funcionalidade>`:** como algo funciona de ponta a ponta, com o caminho passo a
+  passo pelo código, usando a mesma busca.
+
+Com o mapa do projeto (`/mapa`) gerado, o resumo dele também vai no `/onde` e no `/como`.
+
 ### Commits e descrição do PR
 
 - **`/commits`** (ou `c` sobre "Mudanças locais" no Navegador): o dante junta, sem o modelo,
