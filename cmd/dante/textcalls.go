@@ -28,6 +28,73 @@ var findingKeys = map[string]string{
 
 // extractTextFindings tira do texto as chamadas escritas e devolve os achados válidos.
 func extractTextFindings(text string) (string, []finding) {
+	rest, tagged := extractTagFindings(text)
+	rest, called := extractCallFindings(rest)
+	return rest, append(tagged, called...)
+}
+
+// Achados escritos em tags, como alguns modelos fazem com os tokens do próprio formato de
+// ferramentas: registrar_achado <|begin|> <|arquivo|>a.go<|/arquivo|> <|linha|>3<|/linha|> …
+var (
+	tagOpen   = regexp.MustCompile(`<\|?([A-Za-z_]+)\|?>`)
+	tagNoise  = regexp.MustCompile(`<\|[A-Za-z_/]*\|>|\bregistr?ar_achados?\b|\bregister_achado\b`)
+	tagMarker = regexp.MustCompile(`<\|?arquivo\|?>`)
+)
+
+func extractTagFindings(text string) (string, []finding) {
+	locs := tagMarker.FindAllStringIndex(text, -1)
+	if len(locs) == 0 {
+		return text, nil
+	}
+	var out []finding
+	var spans [][2]int
+	for i, l := range locs {
+		end := len(text)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		seg := text[l[0]:end]
+		fields := map[string]any{}
+		last := 0
+		for _, m := range tagOpen.FindAllStringSubmatchIndex(seg, -1) {
+			name := seg[m[2]:m[3]]
+			if m[0] < last {
+				continue
+			}
+			closeTag := regexp.MustCompile(`<\|?/` + regexp.QuoteMeta(name) + `\|?>`)
+			c := closeTag.FindStringIndex(seg[m[1]:])
+			if c == nil {
+				continue
+			}
+			fields[name] = strings.TrimSpace(seg[m[1] : m[1]+c[0]])
+			last = m[1] + c[1]
+		}
+		f, err := parseFinding(normalizeFinding(fields))
+		if err != nil {
+			continue
+		}
+		out = append(out, f)
+		spans = append(spans, [2]int{l[0], l[0] + last})
+	}
+	if len(out) == 0 {
+		return text, nil
+	}
+	// Tira os trechos dos achados e os tokens soltos ao redor (<|begin|>, registrar_achado…).
+	var b strings.Builder
+	prev := 0
+	for _, sp := range spans {
+		b.WriteString(text[prev:sp[0]])
+		prev = sp[1]
+	}
+	b.WriteString(text[prev:])
+	rest := tagNoise.ReplaceAllString(b.String(), "")
+	rest = regexp.MustCompile(`[ \t]+\n`).ReplaceAllString(rest, "\n")
+	rest = regexp.MustCompile(`\n{3,}`).ReplaceAllString(rest, "\n\n")
+	return strings.TrimSpace(rest), out
+}
+
+// extractCallFindings tira do texto as chamadas no formato registrar_achado(chave="valor").
+func extractCallFindings(text string) (string, []finding) {
 	var out []finding
 	var b strings.Builder
 	rest := text

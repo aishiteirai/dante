@@ -54,3 +54,21 @@ func TestChatMostraCartoesDosAchadosEmTexto(t *testing.T) {
 		t.Fatalf("a chamada crua continua no chat:\n%s", out)
 	}
 }
+
+func TestAchadosEmTags(t *testing.T) {
+	text := "**Impacto:** nada grave.\n\nregistrar_achado <|begin|> <|register_achado|> <|arquivo|>internal/llm/.openai.go.swp<|/arquivo|> " +
+		"<|linha|>1<|/linha|> <|titulo|>Arquivos de swap no repositório<|/titulo|> <|explicacao|>São gerados pelo editor.<|/explicacao|> " +
+		"<|severidade|>baixa<|/severidade|> <|sugestao|>Ignore *.swp.<|/sugestao|> <|end|>"
+	rest, fs := extractTextFindings(text)
+	if len(fs) != 1 || fs[0].Linha != 1 || fs[0].Severidade != "baixa" || fs[0].Sugestao != "Ignore *.swp." {
+		t.Fatalf("achados = %+v", fs)
+	}
+	if rest != "**Impacto:** nada grave." {
+		t.Fatalf("sobrou = %q", rest)
+	}
+	// Formato XML simples também.
+	_, fs = extractTextFindings("<arquivo>a.go</arquivo><linha>3</linha><titulo>t</titulo><explicacao>e</explicacao><severidade>alta</severidade>")
+	if len(fs) != 1 || fs[0].Severidade != "alta" {
+		t.Fatalf("xml = %+v", fs)
+	}
+}
