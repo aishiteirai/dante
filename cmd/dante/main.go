@@ -35,6 +35,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\n%s\nConfiguração de provedores e modelos: %s\n", headlessUsage, config.Path())
 	}
 	flag.Parse()
+	// Um comando que o dante não conhece (digitado errado, ou de uma versão mais nova) não
+	// abre a interface calado: diz o que houve.
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "dante: comando desconhecido %q nesta versão (%s)\n\n%s", flag.Arg(0), version, headlessUsage)
+		os.Exit(2)
+	}
 	if *showVersion {
 		fmt.Println("dante", version)
 		return
