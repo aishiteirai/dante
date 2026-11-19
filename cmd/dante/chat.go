@@ -210,12 +210,14 @@ func (m model) contextBlock() string {
 		fmt.Fprintf(&b, "Arquivos alterados no alvo (%d):\n", len(files))
 		for i, f := range files {
 			if i == 80 {
-				fmt.Fprintf(&b, "  … e mais %d\n", len(m.files)-80)
+				fmt.Fprintf(&b, "  … e mais %d\n", len(files)-80)
 				break
 			}
 			fmt.Fprintf(&b, "  %s %s (+%d -%d)\n", f.Status, f.Path, f.Add, f.Del)
 		}
-		fmt.Fprintf(&b, "Arquivo em foco: %s\n", m.files[m.fileIdx].Path)
+		if m.fileIdx < len(m.files) && repo.Kind(m.files[m.fileIdx].Path) != repo.KindTemp {
+			fmt.Fprintf(&b, "Arquivo em foco: %s\n", m.files[m.fileIdx].Path)
+		}
 	}
 	b.WriteString("</contexto>\n\n")
 	out, _ := repo.Redact(b.String())
@@ -380,6 +382,8 @@ func (m model) turnLimits() llm.Limits {
 		l.ReadRounds = 1
 	case m.task == taskExplicar:
 		l.ReadRounds = 3
+	case m.task == taskConversar:
+		l.ReadRounds = 2
 	default:
 		l.ReadRounds = 2
 	}
@@ -463,14 +467,21 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	if !explicit {
 		t, l = detectMode(rest)
 	}
+	// A tarefa vale para esta mensagem: o que o pedido indicar (comando ou palavras) ou, sem
+	// sinal, conversar. Assim um "oi" ou uma pergunta solta não vira uma revisão.
 	before := modeLabel(m.task, m.level)
+	if t == nil {
+		v := taskConversar
+		t = &v
+	}
+	conversaAgora := *t == taskConversar && m.task != taskConversar
 	if t != nil {
 		m.task = *t
 	}
 	if l != nil {
 		m.level = *l
 	}
-	if after := modeLabel(m.task, m.level); after != before {
+	if after := modeLabel(m.task, m.level); after != before && !conversaAgora {
 		note := "modo: " + after
 		if !explicit {
 			note = "↻ modo detectado no seu pedido: " + after + " · /revisar, /explicar ou /normal para trocar"
@@ -497,7 +508,13 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	if m.checkBlock != "" && !m.checkSent && m.task == taskRevisar {
 		checkBlock, m.checkSent = m.checkBlock, true
 	}
-	prompt := m.contextBlock() + m.diffBlock(scope) + checkBlock + modeBlock(m.task, m.level, m.agentBlock()) + text
+	// Na conversa, o diff não vai junto (o modelo pede se precisar): economiza tokens e não
+	// convida a uma revisão que não foi pedida.
+	diff := ""
+	if m.task != taskConversar || scope != "" {
+		diff = m.diffBlock(scope)
+	}
+	prompt := m.contextBlock() + diff + checkBlock + modeBlock(m.task, m.level, m.agentBlock()) + text
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""

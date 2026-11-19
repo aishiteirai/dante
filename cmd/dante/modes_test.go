@@ -109,3 +109,33 @@ func TestModoNaMensagem(t *testing.T) {
 		t.Fatalf("sugestões = %+v", s)
 	}
 }
+
+func TestOiNaoViraRevisao(t *testing.T) {
+	t.Setenv("DANTE_CONFIG", t.TempDir())
+	novo := func() model {
+		m := newModel(config.Defaults(), "", "")
+		m.repo = gitRepo(t)
+		m.prov, _ = m.cfg.Provider("ollama")
+		m.modelName = "x"
+		m.files, _ = m.repo.Files("")
+		return m
+	}
+	m := novo()
+	if m.task != taskConversar {
+		t.Fatalf("o chat deveria começar conversando, não em %s", taskNames[m.task])
+	}
+	nm, _ := m.send("oi")
+	m = nm.(model)
+	if m.task != taskConversar || m.diffPending != "" {
+		t.Fatalf("\"oi\": tarefa %s, diff enviado %q", taskNames[m.task], m.diffPending)
+	}
+	if b := modeBlock(taskConversar, levelNormal, ""); !strings.Contains(b, "não faça revisão") {
+		t.Fatalf("instruções da conversa: %s", b)
+	}
+	m = novo()
+	nm, _ = m.send("revise as mudanças")
+	m = nm.(model)
+	if m.task != taskRevisar || m.diffPending == "" {
+		t.Fatalf("\"revise\": tarefa %s, diff %q", taskNames[m.task], m.diffPending)
+	}
+}

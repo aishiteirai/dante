@@ -13,6 +13,7 @@ type taskMode int
 const (
 	taskRevisar taskMode = iota
 	taskExplicar
+	taskConversar // responder ao que foi perguntado, sem revisão nem análise não pedida
 )
 
 type levelMode int
@@ -23,13 +24,13 @@ const (
 	levelRapido
 )
 
-var taskNames = map[taskMode]string{taskRevisar: "revisar", taskExplicar: "explicar"}
+var taskNames = map[taskMode]string{taskRevisar: "revisar", taskExplicar: "explicar", taskConversar: "conversar"}
 var levelNames = map[levelMode]string{levelNormal: "normal", levelAprendiz: "aprendiz", levelRapido: "rápido"}
 
 type chatCommand struct{ name, desc string }
 
 var chatCommands = []chatCommand{
-	{"/revisar", "procura problemas (padrão)"},
+	{"/revisar", "procura problemas nas mudanças (ou a tecla r)"},
 	{"/explicar", "diz o que o código faz e por quê, sem julgar"},
 	{"/aprendiz", "sem jargão, com analogias e por onde começar"},
 	{"/rapido", "cinco linhas no máximo"},
@@ -176,6 +177,8 @@ func modeBlock(t taskMode, l levelMode, agent string) string {
 	b.WriteString("<modo>" + modeLabel(t, l) + "\n")
 	b.WriteString(agent)
 	switch t {
+	case taskConversar:
+		b.WriteString(chatInstructions)
 	case taskRevisar:
 		b.WriteString(reviewInstructions)
 	case taskExplicar:
@@ -193,6 +196,12 @@ func modeBlock(t taskMode, l levelMode, agent string) string {
 	b.WriteString("</modo>\n\n")
 	return b.String()
 }
+
+// Instruções da conversa: o padrão quando o pedido não é revisar nem explicar.
+var chatInstructions = "Tarefa: conversar. Responda só ao que foi perguntado, de forma direta e curta; não faça " +
+	"revisão, análise ou lista de problemas que não foram pedidas, nem chame registrar_achado. Se a mensagem for um " +
+	"cumprimento ou não tiver pergunta, responda em uma frase e diga, em uma linha, o que você pode fazer (revisar as " +
+	"mudanças, explicar o código, dizer onde mexer). Se a resposta depender do código, leia só o necessário.\n"
 
 // Instruções da tarefa de explicar: o efeito, o antes e depois, o porquê e o impacto, em
 // rótulos curtos (cabem melhor no painel do chat que títulos).
