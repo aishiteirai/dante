@@ -334,6 +334,51 @@ tokens.
   neste repositório, `u` só desta vez ou `n` não. A lista fica em `verificacoes_permitidas`
   no `config.json`.
 
+### Sem interface: scripts, hook do Claude Code e CI
+
+```bash
+dante review [alvo]            # verificações do projeto + revisão com IA, em markdown
+dante review --json            # o mesmo em JSON
+dante review --saida rel.md    # grava o relatório (para comentar no PR)
+dante review --sem-ia          # só as verificações, sem tokens
+dante check                    # só as verificações do projeto
+dante explain arquivo.go:120   # explica a função dessa linha (ou: dante explain NomeDaFuncao)
+dante ask "o que muda para quem chama ListOrders?"
+```
+
+O alvo pode ser `local` (mudanças locais), um commit ou `base...branch` (ex.: `main...feat/x`).
+Sem alvo, vale o mesmo que na interface: as mudanças locais; sem elas, a branch atual × main;
+senão, o último commit. `--modelo provedor/modelo` escolhe o modelo (padrão: o último usado na
+interface). Rodar `dante check` ou `dante review` é a sua permissão para as verificações.
+
+**Hook do Claude Code.** No repositório, rode uma vez:
+
+```bash
+dante hook instalar        # ou: dante hook instalar --ia
+```
+
+Isso acrescenta ao `.claude/settings.json` do projeto (sem mexer no resto) um hook `Stop`:
+quando o Claude Code termina uma tarefa, o dante roda as verificações do projeto nas mudanças
+locais e, se achar problemas **novos**, devolve a lista ao próprio Claude, que corrige antes
+de terminar. Você só revisa o que já passou por esse filtro. Com `--ia`, o hook também faz a
+revisão com o modelo e devolve os achados de gravidade média ou maior (gasta tokens a cada
+tarefa). Quando o Claude já está corrigindo o que o dante apontou, o hook deixa terminar, para
+não entrar em laço.
+
+**CI (quality gate).** `--ci --falhar-em SEV` sai com erro quando há achado com gravidade
+igual ou maior (`baixa`, `media`, `alta`, `critica`; erros das ferramentas contam como média).
+Exemplo de GitHub Actions:
+
+```yaml
+- run: dante review origin/main...HEAD --ci --falhar-em alta --saida revisao.md --modelo deepseek/deepseek-chat
+  env:
+    DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+- if: always()
+  run: gh pr comment ${{ github.event.pull_request.number }} --body-file revisao.md
+  env:
+    GH_TOKEN: ${{ github.token }}
+```
+
 ### Chegando num projeto novo
 
 - **Explorador (`p` no Navegador):** troca os commits pela árvore do projeto inteiro. `→`

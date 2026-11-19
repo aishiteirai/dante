@@ -32,12 +32,14 @@ Fases:
 1. Feito. Revisão: branch como um PR, seção Impacto, listas de verificação, /corrigir.
 2. Feito. Commits: /commits (plano em Conventional Commits, o git só roda com confirmação), /pr.
 3. Feito. Onboarding: aba Arquivo, explorador do projeto, /onde (com briefing), /como.
-4. Verificações locais: detectar e rodar as ferramentas do projeto nos arquivos alterados,
-   com permissão por repositório; só os problemas novos, como cartões que entram na revisão
-   como fatos (sem gastar tokens).
-5. Integração com o agente e o CI: `dante review --hook` (devolve os problemas ao Claude Code
-   antes de a pessoa revisar), comandos sem interface, servidor MCP, `dante review --ci` com
-   quality gate e /regras (gerar o CLAUDE.md/AGENTS.md do projeto).
+4. Feito. Verificações locais: /verificar roda as ferramentas do projeto nos arquivos
+   alterados (permissão por repositório) e mostra só os problemas novos; na revisão, vão ao
+   modelo como fatos (`internal/checks/`, `cmd/dante/checksview.go`).
+5. Integração com o agente e o CI.
+   Feito (5a): `dante review/check/explain/ask` sem interface, `dante review --hook` com
+   `dante hook instalar` (devolve os problemas ao Claude Code antes de a pessoa revisar) e
+   `--ci --falhar-em` (quality gate) — `cmd/dante/headless.go`.
+   Falta (5b): servidor MCP e /regras (gerar o CLAUDE.md/AGENTS.md do projeto).
 6. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
 Em paralelo: conjunto de perguntas de teste para medir as respostas.
 
