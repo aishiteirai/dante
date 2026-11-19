@@ -13,6 +13,7 @@ import (
 	"github.com/aishiteirai/dante/internal/llm"
 	"github.com/aishiteirai/dante/internal/mapa"
 	"github.com/aishiteirai/dante/internal/repo"
+	"github.com/aishiteirai/dante/internal/tech"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -151,6 +152,8 @@ type model struct {
 	undo        []undoGroup      // mudanças de cada resposta, para ctrl+z
 	permIdx     int              // seleção no painel de permissões
 	packed      *packedDiffs     // diffs por arquivo já enviados na conversa
+	techs       *tech.Report     // tecnologias do projeto (/tecnologias), lidas uma vez
+	techsRoot   string           // repositório de techs
 	tipShown    bool             // dica de ctrl+n já mostrada nesta conversa
 	isolated    bool             // a resposta em andamento é uma pergunta avulsa (fora da conversa)
 	purpose     string           // o que fazer com a resposta avulsa ao terminar ("commits", "pr")
@@ -465,6 +468,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case funcPackMsg:
 		return m.onFuncPack(msg)
+	case techReportMsg:
+		return m.onTechReport(msg)
+	case learnPackMsg:
+		return m.onLearnPack(msg)
 
 	case mapScannedMsg:
 		return m.onMapScanned(msg)

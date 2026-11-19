@@ -13,6 +13,7 @@ import (
 	"github.com/aishiteirai/dante/internal/config"
 	"github.com/aishiteirai/dante/internal/mapa"
 	"github.com/aishiteirai/dante/internal/repo"
+	"github.com/aishiteirai/dante/internal/tech"
 )
 
 // Servidor MCP (dante mcp): o Claude Code e outros clientes MCP usam o dante como fonte de
@@ -57,6 +58,12 @@ func mcpTools() []mcpTool {
 		{Name: "dante_mapa", Description: "O mapa do projeto gerado pelo dante (/mapa): visão geral, por onde começar e uma linha por pasta. " +
 			"Sem mapa, devolve as pastas do projeto com a quantidade de arquivos.",
 			InputSchema: obj(map[string]any{}), run: mcpMapa},
+		{Name: "dante_tecnologias", Description: "As tecnologias do projeto, lidas dos manifestos (go.mod, package.json, pyproject.toml, " +
+			"requirements.txt, Cargo.toml, Gemfile) e do código: linguagens, frameworks e bibliotecas, com o que cada uma é e os arquivos que a usam. " +
+			"Use para se orientar num projeto novo ou antes de escolher uma biblioteca.",
+			InputSchema: obj(map[string]any{}), run: func(m model, _ map[string]any) (string, error) {
+				return tech.Detect(m.repo.Root).Markdown(), nil
+			}},
 		{Name: "dante_quem_usa", Description: "Quem usa um arquivo: os outros arquivos que o citam (em Go, quem importa a pasta dele).",
 			InputSchema: obj(map[string]any{"arquivo": str("Caminho a partir da raiz.")}, "arquivo"), run: mcpQuemUsa},
 	}

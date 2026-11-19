@@ -401,9 +401,9 @@ func (m model) helpLine() string {
 			return base + "←→ capítulo · [ ] aba · ctrl+g referências · enter chat"
 		}
 		if m.vtab == vtFile {
-			return base + "n/N mudança · / busca · : linha · clique + f explica a função · x o arquivo · [ ] abas"
+			return base + "n/N mudança · / busca · : linha · clique + f função · i o que é · x o arquivo · [ ] abas"
 		}
-		return base + "v arquivo inteiro · clique + f explica a função · n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
+		return base + "v arquivo inteiro · clique + f função · i o que é · n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
 	case pChat:
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"

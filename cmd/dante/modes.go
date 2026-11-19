@@ -46,6 +46,9 @@ var chatCommands = []chatCommand{
 	{"/pr", "escreve a descrição do PR da branch atual"},
 	{"/corrigir", "copia um pedido de correção dos achados, para colar no Claude"},
 	{"/funcao", "explica uma função (pelo nome ou colada) numa pergunta barata"},
+	{"/tecnologias", "o que o projeto usa (linguagens, frameworks, bibliotecas), sem tokens"},
+	{"/trilha", "roteiro para aprender uma tecnologia lendo este projeto (ex.: /trilha react)"},
+	{"/oque", "o que é um termo, com exemplos do projeto (ex.: /oque goroutine)"},
 	{"/mapa", "gera o mapa do projeto com um modelo barato (mostra o custo antes)"},
 	{"/tour", "percorre o mapa do projeto, capítulo por capítulo"},
 }

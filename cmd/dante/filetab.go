@@ -137,7 +137,7 @@ func (m model) fileTabHeader(w int) (string, string) {
 	if c := len(ft.changed); c > 0 {
 		l1 += lipgloss.NewStyle().Foreground(okColor).Render(fmt.Sprintf(" · ▎%d alteradas", c))
 	}
-	l2 := "n/N mudança · / busca · : linha · clique + f explica · x o arquivo · [ ] abas"
+	l2 := "n/N mudança · / busca · : linha · clique + f função · i o que é · x o arquivo · [ ] abas"
 	switch {
 	case m.fileInput != "":
 		l2 = m.fileInput + "▏"
