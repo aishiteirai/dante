@@ -23,6 +23,7 @@ type finding struct {
 	Titulo     string `json:"titulo"`
 	Explicacao string `json:"explicacao"`
 	Sugestao   string `json:"sugestao"`
+	Fonte      string `json:"-"` // ferramenta que apontou (verificações locais); vazio = o modelo
 }
 
 var severities = []string{"critica", "alta", "media", "baixa"}
@@ -148,7 +149,11 @@ func renderFinding(f finding, n, w int) string {
 	col := sevColor(f.Severidade)
 	bar := lipgloss.NewStyle().Foreground(col).Render("▌")
 	inner := max(w-2, 10)
-	head := lipgloss.NewStyle().Foreground(col).Bold(true).Render(sevLabel[f.Severidade] + " · " + catLabel[f.Categoria])
+	kind := catLabel[f.Categoria]
+	if f.Fonte != "" {
+		kind = f.Fonte
+	}
+	head := lipgloss.NewStyle().Foreground(col).Bold(true).Render(sevLabel[f.Severidade] + " · " + kind)
 	chip := refChip(f, n)
 	gap := inner - lipgloss.Width(head) - lipgloss.Width(chip)
 	if gap < 1 {

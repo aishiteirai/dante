@@ -18,6 +18,18 @@ dante · meu-app (main)                                          DeepSeek · dee
 ctrl+space comandos · alt+setas foco · ↑↓ arquivo · r revisar · o editor           ▾ minimizados
 ```
 
+## O que o dante é (e o que não é)
+
+O dante é a **camada de entendimento e revisão com IA** para quem trabalha com agentes de
+código: entender um projeto, saber onde mexer, revisar o que o agente fez e organizar commits
+e PRs. Ele junta o que as ferramentas fixas já sabem (git, linters) com o raciocínio do modelo.
+
+Ele **não** substitui linters, formatadores ou plataformas de qualidade como
+[Qlty](https://qlty.sh) e [Ultracite](https://www.ultracite.ai): **usa** essas ferramentas
+quando o projeto as tem e mostra só o que a mudança introduziu. Elas respondem "o código
+segue as regras?"; o dante responde "o que a mudança faz, quem ela afeta e onde está o erro
+de lógica?".
+
 ## Instalação
 
 ### Windows (PowerShell, sem administrador)
@@ -302,6 +314,25 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
   por `▶`: no diff, se o arquivo mudou no commit, ou o arquivo inteiro na aba Documento.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
+
+### Verificações do projeto (linters, sem tokens)
+
+O dante não tem linter próprio: ele **usa as ferramentas que o projeto já tem** e mostra só
+os problemas que a mudança introduziu (os antigos ficam de fora), como cartões, sem gastar
+tokens.
+
+- **`/verificar`** roda as ferramentas nos arquivos alterados (mudanças locais, ou a branch
+  atual × main). Ferramentas detectadas: **Qlty** (com `.qlty/qlty.toml`, ele basta: roda os
+  linters do projeto), **Biome**, **Oxlint** ou **ESLint** (incluindo a configuração do
+  Ultracite), **tsc**, **ruff**, **golangci-lint** ou **go vet** e **clippy**. As de
+  JavaScript precisam estar em `node_modules/.bin`: o dante nunca baixa nada.
+- **Na revisão (`r`),** com as verificações permitidas, elas rodam antes, e os problemas vão
+  ao modelo como fatos ("não repita; avalie o impacto"). A revisão fica mais precisa e foca
+  no que só a IA consegue ver.
+- **Permissão por repositório:** rodar essas ferramentas executa código do projeto
+  (configurações, plugins). Na primeira vez, o dante mostra os comandos e pergunta: `s` sempre
+  neste repositório, `u` só desta vez ou `n` não. A lista fica em `verificacoes_permitidas`
+  no `config.json`.
 
 ### Chegando num projeto novo
 

@@ -112,8 +112,11 @@ type Config struct {
 	Provedores   []Provider `json:"provedores"`
 	UltimoModelo *Choice    `json:"ultimo_modelo,omitempty"`
 	MapaModelo   *Choice    `json:"mapa_modelo,omitempty"` // último modelo usado no /mapa
-	Esforco      string     `json:"esforco"`
-	Confiados    []string   `json:"repositorios_confiados,omitempty"`
+	// Repositórios em que o dante pode rodar as ferramentas de verificação do projeto
+	// (linters, go vet, tsc…). Rodá-las executa código do projeto: por isso, pede antes.
+	Verificacoes []string `json:"verificacoes_permitidas,omitempty"`
+	Esforco      string   `json:"esforco"`
+	Confiados    []string `json:"repositorios_confiados,omitempty"`
 	// Arquivos que o modelo não pode ler, além dos padrões do dante (.env, *.pem, id_rsa...),
 	// e exceções a eles. Padrões glob, comparados com o nome ou, se tiverem "/", com o caminho.
 	ArquivosBloqueados []string `json:"arquivos_bloqueados,omitempty"`
@@ -390,4 +393,20 @@ func (c *Config) SetPermission(op, v string) {
 		c.Permissoes = map[string]string{}
 	}
 	c.Permissoes[op] = v
+}
+
+// ChecksAllowed: o dante pode rodar as verificações do projeto neste repositório.
+func (c Config) ChecksAllowed(root string) bool {
+	for _, r := range c.Verificacoes {
+		if r == root {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) AllowChecks(root string) {
+	if !c.ChecksAllowed(root) {
+		c.Verificacoes = append(c.Verificacoes, root)
+	}
 }

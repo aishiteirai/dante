@@ -17,6 +17,7 @@ const (
 	modePerms   // permissões do agente (/permissoes ou ctrl+space p)
 	modeMap     // confirmação do /mapa
 	modeCommits // plano de commits (/commits)
+	modeChecks  // permissão para rodar as verificações do projeto
 )
 
 const resizeStep = 0.03
@@ -224,6 +225,8 @@ func (m model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateMapKeys(key)
 	case modeCommits:
 		return m.updateCommitKeys(key)
+	case modeChecks:
+		return m.updateChecksConfirm(key)
 	}
 
 	if key == "ctrl+z" { // desfaz as mudanças da última resposta
