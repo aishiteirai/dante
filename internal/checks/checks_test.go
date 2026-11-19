@@ -29,6 +29,11 @@ func TestParsers(t *testing.T) {
 	if is = Parse("tsc", "tsc", ts, "/r"); len(is) != 1 || is[0].Rule != "TS2322" || is[0].Line != 10 {
 		t.Fatalf("tsc = %+v", is)
 	}
+	for in, want := range map[string]string{"file:///C:/r/src/f.go": "src/f.go", "C:/r/g.go": "g.go", "./h.go": "h.go"} {
+		if got := rel("C:/r", in); got != want {
+			t.Errorf("rel(%q) = %q, quer %q", in, got, want)
+		}
+	}
 	ruff := "app/x.py:12:5: F841 Local variable `y` is assigned to but never used\nFound 1 error."
 	if is = Parse("ruff", "text", ruff, "/r"); len(is) != 1 || is[0].Path != "app/x.py" || is[0].Line != 12 {
 		t.Fatalf("ruff = %+v", is)
