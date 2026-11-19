@@ -315,6 +315,25 @@ quando muda o modo por conta própria. A detecção nunca mexe em permissões.
 - **Leituras do modelo:** ficam agrupadas numa linha ("✓ 3 leituras: …"); `ctrl+o` mostra
   uma por linha.
 
+### Verificações do projeto (linters, sem tokens)
+
+O dante não tem linter próprio: ele **usa as ferramentas que o projeto já tem** e mostra só
+os problemas que a mudança introduziu (os antigos ficam de fora), como cartões, sem gastar
+tokens.
+
+- **`/verificar`** roda as ferramentas nos arquivos alterados (mudanças locais, ou a branch
+  atual × main). Ferramentas detectadas: **Qlty** (com `.qlty/qlty.toml`, ele basta: roda os
+  linters do projeto), **Biome**, **Oxlint** ou **ESLint** (incluindo a configuração do
+  Ultracite), **tsc**, **ruff**, **golangci-lint** ou **go vet** e **clippy**. As de
+  JavaScript precisam estar em `node_modules/.bin`: o dante nunca baixa nada.
+- **Na revisão (`r`),** com as verificações permitidas, elas rodam antes, e os problemas vão
+  ao modelo como fatos ("não repita; avalie o impacto"). A revisão fica mais precisa e foca
+  no que só a IA consegue ver.
+- **Permissão por repositório:** rodar essas ferramentas executa código do projeto
+  (configurações, plugins). Na primeira vez, o dante mostra os comandos e pergunta: `s` sempre
+  neste repositório, `u` só desta vez ou `n` não. A lista fica em `verificacoes_permitidas`
+  no `config.json`.
+
 ### Chegando num projeto novo
 
 - **Explorador (`p` no Navegador):** troca os commits pela árvore do projeto inteiro. `→`
