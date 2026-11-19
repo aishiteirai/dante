@@ -64,3 +64,30 @@ func dobro(x int) int { return 2 * x }
 		t.Fatal("DeclaredName")
 	}
 }
+
+func TestLocate(t *testing.T) {
+	r := setup(t)
+	write := func(p, c string) {
+		os.MkdirAll(filepath.Join(r.Root, filepath.Dir(p)), 0o755)
+		os.WriteFile(filepath.Join(r.Root, p), []byte(c), 0o644)
+	}
+	write("orders/list.go", "package orders\n\nfunc ListOrders(filter Filter) []Order {\n\treturn nil\n}\n")
+	write("orders/filter.go", "package orders\n\ntype Filter struct{ Status string }\n")
+	write("orders/list_test.go", "package orders\n\nfunc TestListOrders() { ListOrders(Filter{}) }\n")
+	write("README.md", "Lista de pedidos (orders) com filtro.\n")
+	hits := r.Locate([]string{"ListOrders", "filter", "pedidos"}, 5)
+	if len(hits) < 3 || hits[0].Path != "orders/list.go" {
+		t.Fatalf("hits = %+v", hits)
+	}
+	for _, h := range hits {
+		if h.Path == "orders/list_test.go" && h.Score >= hits[0].Score {
+			t.Fatal("teste não deveria valer mais que o código")
+		}
+	}
+	if hits[0].Lines[0].Line != 3 { // a declaração vem primeiro
+		t.Fatalf("linhas = %+v", hits[0].Lines)
+	}
+	if us := r.FileUsers(WorkTree, "orders/list.go", 5); len(us) != 0 {
+		t.Fatalf("ninguém importa a pasta orders: %+v", us)
+	}
+}
