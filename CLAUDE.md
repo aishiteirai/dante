@@ -35,11 +35,11 @@ Fases:
 4. Feito. Verificações locais: /verificar roda as ferramentas do projeto nos arquivos
    alterados (permissão por repositório) e mostra só os problemas novos; na revisão, vão ao
    modelo como fatos (`internal/checks/`, `cmd/dante/checksview.go`).
-5. Integração com o agente e o CI.
-   Feito (5a): `dante review/check/explain/ask` sem interface, `dante review --hook` com
-   `dante hook instalar` (devolve os problemas ao Claude Code antes de a pessoa revisar) e
-   `--ci --falhar-em` (quality gate) — `cmd/dante/headless.go`.
-   Falta (5b): servidor MCP e /regras (gerar o CLAUDE.md/AGENTS.md do projeto).
+5. Feito. Integração com o agente e o CI (`cmd/dante/headless.go`, `mcp.go`, `regras.go`):
+   `dante review/check/explain/ask` sem interface; `dante review --hook` com `dante hook
+   instalar` (devolve os problemas novos ao Claude Code antes de a pessoa revisar);
+   `--ci --falhar-em` (quality gate); `dante mcp` (ferramentas de contexto sem tokens, com
+   `dante mcp instalar`); /regras e `dante regras` (rascunho do CLAUDE.md/AGENTS.md).
 6. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
 Em paralelo: conjunto de perguntas de teste para medir as respostas.
 
