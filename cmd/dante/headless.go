@@ -36,6 +36,10 @@ const headlessUsage = `Comandos sem interface:
   dante mcp                    servidor MCP (contexto do repositório para o Claude Code e afins)
   dante mcp instalar           registra o servidor no .mcp.json deste repositório
   dante regras [--salvar]      rascunho do CLAUDE.md do projeto (com --salvar, grava)
+  dante eval [alvo] [ARQ.json] perguntas de teste: tokens, rota, tarefa e formato das respostas
+      --sem-ia                 só a rota e o tamanho do pedido, sem gastar tokens
+      --json                   resultados em JSON (para comparar modelos)
+      sem ARQ: .dante/eval.json do repositório, ou o conjunto padrão
 
   alvo: "local" (mudanças locais), um commit, ou base...branch (ex.: main...feat/x).
   Sem alvo: as mudanças locais; sem elas, a branch atual × main; senão, o último commit.
@@ -43,7 +47,7 @@ const headlessUsage = `Comandos sem interface:
 `
 
 var headlessCmds = map[string]bool{"review": true, "revisar": true, "check": true, "verificar": true, "explain": true,
-	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true}
+	"explicar": true, "ask": true, "perguntar": true, "hook": true, "mcp": true, "regras": true, "eval": true}
 
 // runHeadless roda um comando sem interface e devolve o código de saída.
 func runHeadless(cfg config.Config, args []string) int {
@@ -113,6 +117,11 @@ func runHeadless(cfg config.Config, args []string) int {
 			return 1
 		}
 		return 0
+	case "eval":
+		if len(rest) > 0 && looksLikeTarget(rest[0]) {
+			rest = rest[1:]
+		}
+		return runEval(m, firstOr(rest, ""), *noAI, *asJSON)
 	case "explain", "explicar":
 		return headlessExplain(m, strings.Join(rest, " "))
 	case "ask", "perguntar":
@@ -213,9 +222,9 @@ func headlessModel(cfg config.Config, modelFlag, arg, cmd string) (model, error)
 	// Alvo: o pedido, ou as mudanças locais, ou a branch atual × main, ou o último commit.
 	target := ""
 	switch {
-	case cmd != "ask" && cmd != "perguntar" && cmd != "explain" && cmd != "explicar" && cmd != "regras" && arg != "":
+	case cmd != "ask" && cmd != "perguntar" && cmd != "eval" && cmd != "explain" && cmd != "explicar" && cmd != "regras" && arg != "":
 		target = arg
-	case cmd == "ask" || cmd == "perguntar":
+	case cmd == "ask" || cmd == "perguntar" || cmd == "eval":
 		if looksLikeTarget(arg) {
 			target = arg
 		}

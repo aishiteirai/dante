@@ -41,7 +41,8 @@ Fases:
    `--ci --falhar-em` (quality gate); `dante mcp` (ferramentas de contexto sem tokens, com
    `dante mcp instalar`); /regras e `dante regras` (rascunho do CLAUDE.md/AGENTS.md).
 6. Aprendizado: tecnologias do projeto, "o que é isso?" no código, trilhas.
-Em paralelo: conjunto de perguntas de teste para medir as respostas.
+Em paralelo, feito: `dante eval` (`cmd/dante/eval.go`), perguntas de teste pelo caminho do chat
+(tokens, rota, tarefa, formato; `--sem-ia` sem tokens).
 
 ## Convenções
 

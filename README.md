@@ -585,6 +585,37 @@ rodada só**:
 Medido na revisão de um commit de 13 arquivos (+291 −195): o fluxo antigo levava 5 rodadas e
 ~70 mil tokens (um modelo real chegou a 220 mil); o novo, 2 rodadas e ~24 mil.
 
+### Medir: perguntas de teste (`dante eval`)
+
+Para comparar modelos ou conferir se uma mudança no dante piorou as respostas, o `dante eval`
+passa um conjunto fixo de perguntas pelo mesmo caminho do chat e mostra, para cada uma, a
+rota (cumprimento à parte ou conversa), a tarefa detectada, os tokens, as rodadas, os achados
+e o tempo:
+
+```bash
+dante eval --modelo gemini/gemini-2.5-flash         # gasta tokens
+dante eval --sem-ia                                 # só rota e tamanho do pedido, sem tokens
+dante eval main...feat/x casos.json --json > a.json # alvo e perguntas próprios, saída em JSON
+```
+
+Sem arquivo, vale o `.dante/eval.json` do repositório ou, sem ele, um conjunto padrão
+("oi", "valeu!", uma pergunta solta, "do que se trata este projeto?", "revise as mudanças",
+"/rapido o que mudou?"). Cada pergunta é uma conversa nova. O formato:
+
+```json
+[
+  {"nome": "cumprimento", "pergunta": "oi",
+   "espera": {"rota": "cumprimento", "max_saida": 150, "max_achados": 0}},
+  {"nome": "sql", "pergunta": "revise a.go",
+   "espera": {"tarefa": "revisar", "min_achados": 1, "contem": ["inje[cç][aã]o"], "max_entrada": 30000}}
+]
+```
+
+`espera` aceita `rota`, `tarefa`, `contem` e `nao_contem` (expressões regulares, sem
+diferenciar maiúsculas), `max_estimativa` (tokens do pedido inicial, conferido também com
+`--sem-ia`), `max_entrada`, `max_saida`, `max_rodadas`, `min_achados` e `max_achados`. Uma
+pergunta fora do esperado sai com ✗ e o motivo, e o comando termina com código 1.
+
 ### Conversas longas
 
 Cada modelo tem um limite de contexto, e o dante cuida dele:
