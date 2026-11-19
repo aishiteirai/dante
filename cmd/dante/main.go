@@ -16,6 +16,13 @@ import (
 var version = "dev"
 
 func main() {
+	// Comandos sem interface (review, check, explain, ask, hook): para scripts, o hook do
+	// Claude Code e o CI.
+	if len(os.Args) > 1 && headlessCmds[os.Args[1]] {
+		llm.UserAgent = "dante/" + version + " (+https://github.com/aishiteirai/dante)"
+		cfg, _ := config.Load()
+		os.Exit(runHeadless(cfg, os.Args[1:]))
+	}
 	showVersion := flag.Bool("versao", false, "mostra a versão do dante e sai")
 	repoFlag := flag.String("repo", "", "abre direto este repositório (caminho, URL ou dono/repo), sem a tela inicial")
 	modelFlag := flag.String("modelo", "", "usa este modelo sem perguntar, como provedor/modelo (ex.: deepseek/deepseek-chat)")
@@ -25,7 +32,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Uso: dante [opções]\n\nRevisor de código para o terminal.\n"+
 			"Ao abrir, pergunta qual repositório revisar e qual modelo usar.\n\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nConfiguração de provedores e modelos: %s\n", config.Path())
+		fmt.Fprintf(os.Stderr, "\n%s\nConfiguração de provedores e modelos: %s\n", headlessUsage, config.Path())
 	}
 	flag.Parse()
 	if *showVersion {
