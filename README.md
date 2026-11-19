@@ -277,12 +277,15 @@ Opções: `dante --repo CAMINHO_OU_URL` abre direto o repositório, e
 
 ### Revisar ou explicar
 
-O chat tem dois tipos de tarefa e três formatos de resposta. O modo atual aparece no título
-do chat (`‹revisar · normal›`) e vale até você trocar.
+Por padrão, o chat **conversa**: responde só ao que foi perguntado, sem revisão nem análise
+que você não pediu (um "oi" recebe um "oi" e as opções), e sem mandar o diff junto, o que
+economiza tokens; o modelo lê o código quando precisa. Revisar e explicar valem para a
+mensagem em que você pede, por comando ou pelas palavras do pedido, e o formato (normal,
+aprendiz, rápido) fica até você trocar. O modo atual aparece no título do chat.
 
 | Comando | O que faz | Também detectado quando você escreve… |
 |---|---|---|
-| `/revisar` | procura problemas (padrão) | "revise", "tem bug?", "está certo?" |
+| `/revisar` (ou a tecla `r`) | procura problemas nas mudanças | "revise", "tem bug?", "está certo?" |
 | `/explicar` | diz o que o código faz e por quê, sem julgar | "explique", "como funciona", "o que faz" |
 | `/aprendiz` | sem jargão, com analogia, passo a passo e glossário | "como se eu fosse um estagiário", "sou iniciante" |
 | `/rapido` | até cinco linhas: o essencial e no máximo três tópicos | "seja pontual", "resumo", "direto ao ponto" |
