@@ -155,6 +155,8 @@ func (m model) onIsolatedDone(purpose string) (tea.Model, tea.Cmd) {
 		m.plan, m.planIdx, m.mode = p, 0, modeCommits
 	case "onde":
 		m.copyBriefing(text)
+	case "regras":
+		m.onRegrasDone(text)
 	case "pr":
 		desc := strings.TrimSpace(text)
 		termenv.Copy(desc)

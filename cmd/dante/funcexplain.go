@@ -167,12 +167,7 @@ func (m model) onFuncPack(msg funcPackMsg) (tea.Model, tea.Cmd) {
 // purpose diz o que fazer com a resposta quando ela terminar ("commits": ler o plano; "pr":
 // copiar a descrição; "": nada).
 func (m model) askIsolated(system, label, prompt, purpose string) (tea.Model, tea.Cmd) {
-	effort := ""
-	if m.prov.Tipo == llm.KindAnthropic {
-		effort = "low"
-	}
-	chat, err := llm.New(m.prov.LLM(), llm.Options{Model: m.modelName, System: system, Effort: effort,
-		ContextTokens: m.effectiveContext(), MaxSteps: 1})
+	chat, err := newIsolatedChat(m, system)
 	if err != nil {
 		m.setErr(err.Error())
 		return m, nil
@@ -280,4 +275,14 @@ func asksAboutPastedFunc(text string) bool {
 	}
 	t, _ := detectMode(text)
 	return (t != nil && *t == taskExplicar) || strings.Contains(fold(text), "o que") || strings.Contains(text, "?")
+}
+
+// newIsolatedChat cria a conversa de uma pergunta avulsa: sem ferramentas e sem histórico.
+func newIsolatedChat(m model, system string) (llm.Chat, error) {
+	effort := ""
+	if m.prov.Tipo == llm.KindAnthropic {
+		effort = "low"
+	}
+	return llm.New(m.prov.LLM(), llm.Options{Model: m.modelName, System: system, Effort: effort,
+		ContextTokens: m.effectiveContext(), MaxSteps: 1})
 }

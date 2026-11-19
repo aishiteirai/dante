@@ -37,6 +37,7 @@ var chatCommands = []chatCommand{
 	{"/ler", "o modelo só lê e sugere (padrão)"},
 	{"/editar", "o modelo pode alterar arquivos, com a sua aprovação"},
 	{"/permissoes", "o que o modelo pode fazer no modo editar"},
+	{"/regras", "rascunho do CLAUDE.md do projeto para os agentes (/regras salvar grava)"},
 	{"/verificar", "roda os linters e checagens do projeto nos arquivos alterados (sem tokens)"},
 	{"/onde", "onde mexer para uma tarefa, com um briefing pronto para o Claude"},
 	{"/como", "como uma funcionalidade funciona de ponta a ponta"},

@@ -165,6 +165,7 @@ type model struct {
 	proj        *projTree
 	fileInput   string // linha de busca (/…) ou de ir para a linha (:…) da aba Arquivo
 	planIdx     int
+	regrasDraft string    // último rascunho do /regras
 	mapData     *mapa.Map // mapa do projeto salvo
 	mapGen      *mapState // confirmação ou geração do mapa em andamento
 	mapChapter  int       // capítulo do tour na aba Mapa
