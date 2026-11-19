@@ -16,6 +16,22 @@ import (
 // ErrInvalidKey indica que o provedor recusou a chave.
 var ErrInvalidKey = errors.New("chave recusada pelo provedor")
 
+// ErrModelNotFound: o provedor não conhece o modelo (nome errado ou descontinuado).
+var ErrModelNotFound = errors.New("modelo ou endpoint não encontrado")
+
+// ErrUnavailable: o provedor está sobrecarregado, instável ou limitando as requisições
+// (429, 5xx); passa sozinho, mas não adianta insistir agora.
+var ErrUnavailable = errors.New("provedor indisponível")
+
+// kindErr é um erro com a mensagem do provedor que também é um dos erros acima (errors.Is).
+type kindErr struct {
+	kind error
+	text string
+}
+
+func (e kindErr) Error() string        { return e.text }
+func (e kindErr) Is(target error) bool { return target == e.kind }
+
 // CheckKey testa a chave com uma chamada barata (listar modelos), sem gastar tokens.
 // Devolve ErrInvalidKey se a chave foi recusada; outros erros significam que não deu
 // para verificar (rede, endpoint sem /models...).

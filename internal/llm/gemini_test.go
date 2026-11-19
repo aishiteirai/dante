@@ -93,7 +93,7 @@ func TestGemini(t *testing.T) {
 func TestModeloDescontinuado(t *testing.T) {
 	body := []byte(`[{"error":{"code":404,"message":"This model models/gemini-2.5-pro is no longer available to new users. Please update your code to use models/gemini-3.1-pro-preview for the latest features and improvements.","status":"NOT_FOUND"}}]`)
 	err := httpError(404, body, Provider{})
-	if !strings.Contains(err.Error(), "descontinuou o modelo gemini-2.5-pro") || !strings.Contains(err.Error(), "gemini-3.1-pro-preview") {
+	if !errors.Is(err, ErrModelNotFound) || !strings.Contains(err.Error(), "descontinuou o modelo gemini-2.5-pro") || !strings.Contains(err.Error(), "gemini-3.1-pro-preview") {
 		t.Fatalf("erro = %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestSobrecargaTentaDeNovo(t *testing.T) {
 	falhas, n = 100, 0
 	chat, _ = New(Provider{Kind: KindOpenAI, BaseURL: srv.URL}, Options{Model: "m"})
 	_, err = chat.Send(context.Background(), "oi", func(Event) {})
-	if err == nil || n != 4 || !strings.Contains(err.Error(), "troque o modelo (m)") || !strings.Contains(err.Error(), "4 tentativas") {
+	if err == nil || n != 4 || !strings.Contains(err.Error(), "troque o modelo (m)") || !strings.Contains(err.Error(), "4 tentativas") || !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err=%v requisições=%d", err, n)
 	}
 	// O histórico continua válido depois da falha.
