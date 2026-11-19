@@ -244,6 +244,9 @@ func (m model) viewMain() string {
 	if m.mode == modeMap {
 		screen = overlay(screen, m.mapPopup(), m.width)
 	}
+	if m.mode == modeChecks && m.checks != nil {
+		screen = overlay(screen, m.checksConfirmPopup(), m.width)
+	}
 	if m.mode == modeCommits && m.plan != nil {
 		screen = overlay(screen, m.commitsPopup(), m.width)
 	}

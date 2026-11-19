@@ -14,7 +14,7 @@ type check struct {
 	items string
 }
 
-var checks = []check{
+var reviewChecks = []check{
 	{"Erros e casos de borda", nil,
 		"erros ignorados ou engolidos; valores nulos, vazios ou no limite; o que acontece se a chamada falhar no meio"},
 	{"Código limpo", nil,
@@ -49,7 +49,7 @@ func reviewChecklist(diff string) string {
 	c := changed.String()
 	var b strings.Builder
 	b.WriteString("<verificar>\nConfira, nas mudanças, o que se aplicar (sem forçar achados):\n")
-	for _, ch := range checks {
+	for _, ch := range reviewChecks {
 		if ch.when == nil || ch.when.MatchString(c) {
 			b.WriteString("- " + ch.name + ": " + ch.items + "\n")
 		}

@@ -156,7 +156,12 @@ type model struct {
 	purpose     string           // o que fazer com a resposta avulsa ao terminar ("commits", "pr")
 	plan        *commitPlan      // plano de commits (/commits)
 	ftab        *fileTab         // aba Arquivo do Visualizador
-	navProject  bool             // Navegador mostrando o projeto inteiro (p)
+	checks      *checksState     // verificações em andamento ou esperando a permissão
+	checkBlock  string           // problemas das ferramentas, para a revisão
+	checkSent   bool
+	checksFor   string // alvo das últimas verificações
+	checksTip   bool
+	navProject  bool // Navegador mostrando o projeto inteiro (p)
 	proj        *projTree
 	fileInput   string // linha de busca (/…) ou de ir para a linha (:…) da aba Arquivo
 	planIdx     int
@@ -437,6 +442,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case approvalEditedMsg:
 		return m.onApprovalEdited(msg)
+
+	case checksDoneMsg:
+		return m.onChecksDone(msg)
 
 	case projMsg:
 		return m.onProject(msg)

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aishiteirai/dante/internal/checks"
 	"github.com/aishiteirai/dante/internal/config"
 	"github.com/aishiteirai/dante/internal/llm"
 	"github.com/aishiteirai/dante/internal/repo"
@@ -127,6 +128,7 @@ func (m *model) resetChat() {
 	m.approval = nil
 	m.packed.reset()
 	m.tipShown = false
+	m.checkBlock, m.checkSent, m.checksFor, m.checksTip = "", false, "", false
 	m.streaming = false
 	m.usage = llm.Usage{}
 	m.convStart = time.Time{}
@@ -229,7 +231,24 @@ func (m model) quickReview(path string) (tea.Model, tea.Cmd) {
 	}
 	m.task = taskRevisar // a tecla r é sempre uma revisão
 	fm, cmd := m.focusPane(pChat)
-	nm, send := fm.(model).sendScoped(text, path)
+	mm := fm.(model)
+	// Com as verificações permitidas, as ferramentas do projeto rodam antes e os problemas
+	// vão à revisão como fatos. Sem a permissão, uma dica, uma vez por conversa.
+	if mm.checksFor != mm.target && mm.modelName != "" && !mm.streaming {
+		if files, _ := mm.checkFiles(); files != nil {
+			if mm.cfg.ChecksAllowed(mm.repo.Root) {
+				mm.checksFor = mm.target
+				nm, run := mm.startChecks(true, text, path)
+				return nm, tea.Batch(cmd, run)
+			}
+			if !mm.checksTip && len(checks.Detect(mm.repo.Root, files)) > 0 {
+				mm.checksTip = true
+				mm.entries = append(mm.entries, entry{kind: eNotice,
+					text: "dica: /verificar roda as ferramentas do projeto (linters, go vet, tsc…) nos arquivos alterados, e a revisão passa a usá-las"})
+			}
+		}
+	}
+	nm, send := mm.sendScoped(text, path)
 	return nm, tea.Batch(cmd, send)
 }
 
@@ -385,6 +404,10 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 		return m.startLocate(kind, strings.TrimSpace(text[len(strings.Fields(text)[0]):]))
 	}
 	switch fold(text) {
+	case "/verificar", "/checar", "/lint":
+		m.input.Reset()
+		m.checksFor = m.target
+		return m.startChecks(false, "", "")
 	case "/commits", "/commit":
 		m.input.Reset()
 		return m.startCommitPlan()
@@ -459,7 +482,11 @@ func (m model) sendScoped(text, scope string) (tea.Model, tea.Cmd) {
 	}
 	*m.sendTo = m.target
 	m.diffPending = ""
-	prompt := m.contextBlock() + m.diffBlock(scope) + modeBlock(m.task, m.level, m.agentBlock()) + text
+	checkBlock := ""
+	if m.checkBlock != "" && !m.checkSent && m.task == taskRevisar {
+		checkBlock, m.checkSent = m.checkBlock, true
+	}
+	prompt := m.contextBlock() + m.diffBlock(scope) + checkBlock + modeBlock(m.task, m.level, m.agentBlock()) + text
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
 	m.streaming, m.thinking = true, false
 	m.status = ""
