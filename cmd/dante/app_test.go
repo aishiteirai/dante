@@ -40,7 +40,7 @@ func TestRemoteURL(t *testing.T) {
 	if _, ok := remoteURL("/tmp"); ok {
 		t.Error("/tmp é caminho local")
 	}
-	if d := cloneDir("git@github.com:dono/proj.git"); !strings.HasSuffix(d, "repos/dono-proj") {
+	if d := cloneDir("git@github.com:dono/proj.git"); !strings.HasSuffix(filepath.ToSlash(d), "repos/dono-proj") {
 		t.Errorf("cloneDir = %s", d)
 	}
 }

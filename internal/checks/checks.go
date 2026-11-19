@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -243,14 +244,30 @@ func Parse(tool, kind, out, root string) []Issue {
 	return is
 }
 
+// rel deixa o caminho relativo à raiz do repositório. Compara na forma com "/", porque as
+// ferramentas escrevem "/" mesmo no Windows, e aceita URIs file:///C:/… do SARIF.
 func rel(root, p string) string {
-	p = strings.TrimPrefix(filepath.ToSlash(p), "file://")
-	if filepath.IsAbs(p) {
-		if r, err := filepath.Rel(root, p); err == nil {
-			p = filepath.ToSlash(r)
+	p = filepath.ToSlash(strings.TrimPrefix(p, "file://"))
+	if len(p) > 2 && p[0] == '/' && p[2] == ':' { // file:///C:/x vira /C:/x
+		p = p[1:]
+	}
+	r := strings.TrimSuffix(filepath.ToSlash(root), "/")
+	if r != "" && len(p) > len(r) && p[len(r)] == '/' && samePath(p[:len(r)], r) {
+		p = p[len(r)+1:]
+	} else if filepath.IsAbs(p) {
+		if rr, err := filepath.Rel(root, filepath.FromSlash(p)); err == nil {
+			p = filepath.ToSlash(rr)
 		}
 	}
 	return strings.TrimPrefix(p, "./")
+}
+
+// samePath compara caminhos sem diferenciar maiúsculas no Windows, onde o sistema também não diferencia.
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func parseSARIF(tool, out, root string) []Issue {

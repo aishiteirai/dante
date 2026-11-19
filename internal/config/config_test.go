@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestChavesSalvas(t *testing.T) {
 		t.Fatalf("chave do dante deveria ter prioridade: %s %q", p.KeySource(), p.LLM().Key())
 	}
 	st, _ := os.Stat(CredentialsPath())
-	if st.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 { // o Windows não tem permissões Unix; a pasta do usuário já é protegida
 		t.Fatalf("permissão = %v", st.Mode().Perm())
 	}
 	// Recarregar mantém a chave, e ela não vai para o config.json.
