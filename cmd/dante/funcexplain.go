@@ -216,6 +216,15 @@ func (m model) funcLocation() (path, ref string, line int, ok bool) {
 			}
 		}
 		return path, ref, max(line, 1), true
+	case vtFile:
+		if m.ftab == nil {
+			return "", "", 0, false
+		}
+		line = m.markLine
+		if line <= 0 {
+			line = m.currentFileLine() + 3
+		}
+		return m.ftab.path, m.ftab.ref, line, true
 	case vtDoc:
 		if m.docIsDiff {
 			return "", "", 0, false

@@ -153,6 +153,8 @@ func (m model) onIsolatedDone(purpose string) (tea.Model, tea.Cmd) {
 		}
 		p.forFiles = filesKey(m.files)
 		m.plan, m.planIdx, m.mode = p, 0, modeCommits
+	case "onde":
+		m.copyBriefing(text)
 	case "pr":
 		desc := strings.TrimSpace(text)
 		termenv.Copy(desc)

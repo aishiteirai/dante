@@ -81,6 +81,12 @@ func (m model) logHeight() int { return m.innerRows(pLog) }
 func (m model) paneTitle(p paneID) (title, extra string) {
 	title = fmt.Sprintf("[%d] %s", p+1, paneNames[p])
 	switch p {
+	case pLog:
+		if m.navProject {
+			extra = "projeto · p volta aos commits"
+		} else {
+			extra = "commits · p mostra o projeto"
+		}
 	case pChat:
 		if m.modelName == "" {
 			extra = "sem modelo (m)"
@@ -371,6 +377,9 @@ func (m model) helpLine() string {
 	base := "ctrl+space comandos · alt+setas foco · "
 	switch m.focus {
 	case pLog:
+		if m.navProject {
+			return base + "↑↓ anda (o arquivo abre no Visualizador) · → abre a pasta · x explica o arquivo · enter vai ao arquivo · p commits"
+		}
 		if m.navFile {
 			return base + "↑↓ arquivo · ← volta ao commit · enter foca o diff · r revisa o arquivo · o editor · tab chat"
 		}
@@ -388,7 +397,10 @@ func (m model) helpLine() string {
 		if m.vtab == vtMap {
 			return base + "←→ capítulo · [ ] aba · ctrl+g referências · enter chat"
 		}
-		return base + "clique + f explica a função · n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
+		if m.vtab == vtFile {
+			return base + "n/N mudança · / busca · : linha · clique + f explica a função · x o arquivo · [ ] abas"
+		}
+		return base + "v arquivo inteiro · clique + f explica a função · n/N trecho · J/K arquivo · [ ] aba · s lado a lado · +/− contexto · o editor"
 	case pChat:
 		if m.streaming {
 			return "esc cancela a resposta · pgup/pgdn rolar"
